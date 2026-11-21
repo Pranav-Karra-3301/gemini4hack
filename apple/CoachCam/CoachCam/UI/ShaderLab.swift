@@ -18,6 +18,8 @@ struct ShaderLab: View {
     @State private var pulse = false
     @State private var flash = false
     @State private var pressed = false
+    @State private var pressStart: Date?
+    @State private var tapMode = false
 
     init(model: RevealModel) {
         self.model = model
@@ -33,6 +35,9 @@ struct ShaderLab: View {
                 ZStack(alignment: .bottom) {
                     LabMetalView(texture: source, agent: agent)
                     codePane(height: rect.height)
+                    DictationBar(isListening: listener.armed || listener.isListening,
+                                 transcript: listener.transcript,
+                                 level: Float(listener.level))
                 }
                 .frame(width: rect.width, height: rect.height)
                 .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
@@ -43,6 +48,7 @@ struct ShaderLab: View {
             micKey
         }
         .task(id: image.map(ObjectIdentifier.init)) { await load() }
+        .onAppear { listener.prepare() }
         .onChange(of: agent.phase) { old, p in
             pulse = false
             if case .fixing = p { withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) { pulse = true } }
@@ -156,7 +162,7 @@ struct ShaderLab: View {
                 Capsule(style: .circular)
                     .fill(RadialGradient(colors: [Color(red: 1, green: 0.38, blue: 0.34).opacity(0.85), .clear],
                                          center: .center, startRadius: 0, endRadius: 80))
-                    .opacity(listener.isListening ? 0.35 + 0.65 * listener.level : 0)
+                    .opacity(listener.isListening ? 0.35 + 0.65 * listener.level : (listener.armed ? 0.35 : 0))
                     .animation(.easeOut(duration: 0.12), value: listener.level)
             }
             .overlay(Image(systemName: agent.busy ? "wand.and.rays" : "mic.fill")
@@ -172,20 +178,39 @@ struct ShaderLab: View {
                     .onChanged { _ in
                         guard !pressed else { return }
                         pressed = true
+                        pressStart = .now
                         UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.8)
-                        listener.begin()
+                        if listener.armed {
+                            // Second tap in tap mode: stop and send.
+                            tapMode = false
+                            send()
+                        } else {
+                            listener.onSilence = { if tapMode { tapMode = false; send() } }
+                            listener.begin()
+                        }
                     }
                     .onEnded { _ in
                         pressed = false
-                        listener.end { said in
-                            guard !said.isEmpty else { return }
-                            chosen = nil
-                            agent.ask(said)
+                        let held = Date.now.timeIntervalSince(pressStart ?? .now)
+                        guard listener.armed else { return }
+                        if held < 0.35 {
+                            // A quick tap keeps listening until the next tap or 1.2 s of silence.
+                            tapMode = true
+                        } else {
+                            send()
                         }
                     }
             )
-            .accessibilityLabel("Hold to say a look")
+            .accessibilityLabel(listener.armed ? "Stop and send" : "Tap or hold to say a look")
             .accessibilityAddTraits(.isButton)
+    }
+
+    private func send() {
+        listener.end { said in
+            guard !said.isEmpty else { return }
+            chosen = nil
+            agent.ask(said)
+        }
     }
 
     // MARK: Source
@@ -364,7 +389,12 @@ private final class LabRenderer: NSObject, MTKViewDelegate {
 final class LookListener {
     private(set) var isListening = false
     private(set) var level: Double = 0
-    @ObservationIgnored private var transcript = ""
+    /// True from the tap, before the engine is up, so the UI shows listening at once.
+    private(set) var armed = false
+    private(set) var transcript = ""
+    /// Called after 1.2 s of silence following speech (tap mode stops and sends on it).
+    @ObservationIgnored var onSilence: (() -> Void)?
+    @ObservationIgnored private var silence: Task<Void, Never>?
     @ObservationIgnored private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     @ObservationIgnored private let engine = AVAudioEngine()
     @ObservationIgnored private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -373,8 +403,21 @@ final class LookListener {
     @ObservationIgnored private var wants = false
     @ObservationIgnored private var onFinal: ((String) -> Void)?
 
+    /// Warms up permissions, the audio session and the engine when the page opens, so the first
+    /// tap starts without lag.
+    func prepare() {
+        Task {
+            guard await Self.authorized() else { return }
+            let session = AVAudioSession.sharedInstance()
+            try? session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
+            _ = engine.inputNode
+            engine.prepare()
+        }
+    }
+
     func begin() {
         wants = true
+        armed = true
         transcript = ""
         Task {
             guard await Self.authorized(), wants else { return }
@@ -384,6 +427,8 @@ final class LookListener {
 
     func end(_ done: @escaping (String) -> Void) {
         wants = false
+        armed = false
+        silence?.cancel()
         guard isListening else { return }
         stopAudio()
         request?.endAudio()
@@ -396,6 +441,8 @@ final class LookListener {
 
     func cancel() {
         wants = false
+        armed = false
+        silence?.cancel()
         onFinal = nil
         task?.cancel()
         task = nil
@@ -444,7 +491,17 @@ final class LookListener {
     }
 
     private func heard(_ text: String?, final: Bool) {
-        if let text, !text.isEmpty { transcript = text }
+        if let text, !text.isEmpty {
+            transcript = text
+            if isListening, !final {
+                silence?.cancel()
+                silence = Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(1200))
+                    guard !Task.isCancelled else { return }
+                    self?.onSilence?()
+                }
+            }
+        }
         if final { deliver() }
     }
 

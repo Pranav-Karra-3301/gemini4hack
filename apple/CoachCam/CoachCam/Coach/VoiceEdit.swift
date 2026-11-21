@@ -16,11 +16,21 @@ final class VoiceEdit {
     private(set) var isListening = false
     /// Input level 0…1 while listening.
     private(set) var level: Double = 0
+    /// True from the instant the user asks to listen (tap or press) until they stop, so the key and
+    /// the dictation bar react before the mic has finished opening.
+    private(set) var active = false
+    /// The live partial transcript of the current (or just-sent) dictation.
+    private(set) var transcript = ""
+    /// The dictation was just sent: the bar keeps the words for ~1 s with a blue dot, then clears.
+    private(set) var sent = false
+    @ObservationIgnored private var silence: Task<Void, Never>?
 
     /// The voice clip of one hold (16 kHz mono 16-bit WAV), right at release.
     @ObservationIgnored var onRelease: ((Data?) -> Void)?
     /// The final transcript of one hold (may be empty), shortly after release.
     @ObservationIgnored var onText: ((String) -> Void)?
+    /// Silence after speech while listening: the key stops the dictation (with its haptic).
+    @ObservationIgnored var onSilence: (() -> Void)?
 
     /// A fresh engine per hold: its input node reads the session's current format (a stale input
     /// format after the coach's Listener or the Speaker changed the session can't install a tap).
@@ -46,6 +56,9 @@ final class VoiceEdit {
         // A previous hold still waiting on its final transcript: hand over what it has now.
         if !delivered { deliver() }
         holding = true
+        active = true
+        sent = false
+        transcript = ""
         Speaker.shared.stop()
         Task {
             let access = await Self.authorize()
@@ -69,6 +82,17 @@ final class VoiceEdit {
     /// Finger up: stop listening and hand over what was said.
     func end() {
         holding = false
+        silence?.cancel()
+        if active {
+            active = false
+            sent = true
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(1.1))
+                guard let self, !self.active else { return }
+                self.sent = false
+                self.transcript = ""
+            }
+        }
         guard isListening else { return }
         let frames = clip.frames
         request?.endAudio()
@@ -93,6 +117,10 @@ final class VoiceEdit {
     /// Drops the current hold without sending anything.
     func cancel() {
         holding = false
+        silence?.cancel()
+        active = false
+        sent = false
+        transcript = ""
         delivered = true
         teardown()
     }
@@ -153,7 +181,19 @@ final class VoiceEdit {
             let message = error?.localizedDescription
             Task { @MainActor in
                 guard let self, self.serial == s else { return }
-                if let text { self.latest = text }
+                if let text {
+                    self.latest = text
+                    if self.active { self.transcript = text }
+                    // ~1.2 s of silence after speech ends a tapped dictation and sends it.
+                    if self.active, !text.isEmpty {
+                        self.silence?.cancel()
+                        self.silence = Task { @MainActor [weak self] in
+                            try? await Task.sleep(for: .seconds(1.2))
+                            guard !Task.isCancelled, let self, self.active, self.serial == s else { return }
+                            self.onSilence?()
+                        }
+                    }
+                }
                 if let message { Self.log.notice("Voice recognizer: \(message, privacy: .public)") }
                 if final || (message != nil && !self.isListening) { self.deliver() }
             }
