@@ -85,6 +85,15 @@ never take the extra hop.
   (`LIVE_CWC_TRIGGER`/`LIVE_CWC_TARGET`), so check-ins every 4 s bill ~180k input tokens/min.
   Send frames only when the picture changed and keep check-ins rare. Measurements:
   `docs/BEST_PRACTICES.md` §3.
+- Spend cap (`server/live_budget.py`): at most `LIVE_MAX_STARTS` (default 20, 0 = off) Live session
+  starts per rolling `LIVE_BUDGET_WINDOW_MIN` (default 10) minutes. Every mint here counts (the
+  apps also mint to reconnect once `new_session_expire_time` has passed), and so does a new
+  browser socket on `WS /api/live`; browser resumes (`?resume=`) and goAway rotations don't. A
+  failed mint or upstream connect is given back. Over the cap the mint answers **429** with
+  `Retry-After: <seconds>` and `{"error": "Live budget reached: 20 sessions started in the last 10
+  min (LIVE_MAX_STARTS). Try again in 4 min."}`; `WS /api/live` sends that JSON and closes 1013
+  (the web client stops retrying). The apps show `error` as is ("Coach Core error 429: …"), and a
+  reconnect refused this way ends the app's session.
 - Reconnect: keep the last `sessionResumptionUpdate.newHandle`; on `goAway` or a drop, reconnect
   to the same `ws_url` (valid until `expire_time`, even with `uses: 1`) and send
   `{"setup": {"sessionResumption": {"handle": "<handle>"}}}`: the conversation continues

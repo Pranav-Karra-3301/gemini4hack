@@ -332,6 +332,11 @@ export function createEngine(ctx) {
         if (startResolve) { startResolve(); startResolve = null; }
         return;
       }
+      if (e.code === 1013) { // Live budget reached: the server's {"error"} is already shown
+        running = false;
+        if (startResolve) { startResolve(); startResolve = null; }
+        return;
+      }
       const delay = Math.min(10000, 800 * 2 ** retry);
       retry += 1;
       if (retry > 3) handle = null; // resumption keeps failing: start fresh

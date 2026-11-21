@@ -278,7 +278,7 @@ wayback checkout with its MLX venv (env `WAYBACK_DIR`).
 
 Main env knobs: `COACH_PORT`, `COACH_LAN`, `COACH_TOKEN`, `COACH_LAN_HOST`, `COACH_LIBRARY`,
 `COACH_WARMUP`, `COACH_HOST` (Vite bind); `LIVE_MODEL`, `LIVE_VOICE`, `LIVE_CWC_TRIGGER`/`TARGET`,
-`LIVE_TOKEN_TTL_MIN`, `LIVE_TOKEN_START_S`; `REGIONS_MODEL`, `SUGGEST_MODEL`, `REVIEW_MODEL`,
+`LIVE_TOKEN_TTL_MIN`, `LIVE_TOKEN_START_S`, `LIVE_MAX_STARTS`, `LIVE_BUDGET_WINDOW_MIN`; `REGIONS_MODEL`, `SUGGEST_MODEL`, `REVIEW_MODEL`,
 `REVIEW_REFINE`, `SEMANTIC_TARGETS_MODEL`, `SEMANTIC_PLAN_MODEL`, `UNDERSTAND_MODEL`, `DECIDE_*`;
 `DEPTH_DEVICE`/`PRECISION`, `SEGMENT_MODEL`/`DEVICE`/`PRECISION`.
 
@@ -301,8 +301,9 @@ Main env knobs: `COACH_PORT`, `COACH_LAN`, `COACH_TOKEN`, `COACH_LAN_HOST`, `COA
   (CoachEdit builds for iOS but only CoachStudio uses it).
 
 **Cost and speed.**
-- No spend guard: nothing caps concurrent Live tokens against Tier 1's $10 per 10 min, and
-  CoachLive ignores `usageMetadata`.
+- The Live spend guard (`LIVE_MAX_STARTS` per `LIVE_BUDGET_WINDOW_MIN`, CORE_API §2) caps
+  session starts, not minutes: a few long sessions can still add up. CoachLive ignores
+  `usageMetadata`, so Core can't meter actual spend.
 - Check-ins every 4 s dominate Live cost; the web live client has no frame change gate and ticks
   regardless.
 - `/api/cam/understand` could move to Flash-Lite (1.1 s vs 4 s, ~8× cheaper) once checked on
