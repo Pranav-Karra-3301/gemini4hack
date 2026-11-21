@@ -47,7 +47,7 @@ and one agent.
 git fetch origin
 git worktree add .worktrees/12-depth-slider -b feat/12-depth-slider origin/main
 cd .worktrees/12-depth-slider
-cp ../../.env .            # gitignored files aren't copied into a new worktree
+cp ../../apple/Local.xcconfig apple/   # gitignored (Gemini key, signing), so not copied into a new worktree
 claude                     # start the agent here
 ```
 
