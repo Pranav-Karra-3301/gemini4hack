@@ -1,12 +1,17 @@
 """Check regions.find_regions on sample images and draw the boxes.
 
-Usage: cd server && uv run --no-sync python checks/regions_check.py [--effort low|medium|high|none|default] IMG...
+Usage: cd server && uv run --no-sync python checks/regions_check.py [--effort low|medium|high|none|default]
+       [--no-depth] IMG...
 Writes ../out/regions_<stem>.jpg (boxes + tags, notes in a footer, ~768 px long side).
+Depth Pro runs first and its summary goes into the prompt, as in the pipeline (--no-depth skips it).
+The photo is already taken, so a note that asks for a reshoot (move the camera, wait, retake…)
+fails the check: exit 1.
 """
 
 import argparse
 import asyncio
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -22,6 +27,14 @@ import regions  # noqa: E402
 
 OUT = ROOT / "out"
 COLORS = {"focus": (40, 220, 120), "remove": (255, 70, 70)}
+# Advice only a photographer at the scene can follow; none of it is possible in the editor.
+CAPTURE = re.compile(
+    r"\b(pan|tilt|angle|step|move|walk|lean|reposition)\b(\s+\w+){0,3}?\s+"
+    r"(left|right|up|down|closer|back|forward|toward|towards|away|aside|in)\b"
+    r"|\bturn (the |your )?(group|subject|camera|him|her|them|toward|towards|away|around|into)\b"
+    r"|\b(re-?shoot|re-?take|wait (for|until|till)|next time|come back|shoot (from|again|at|wider|tighter)|"
+    r"(fill[- ])?flash|reflector|position the|ask (him|her|them|the)|change (the |your )?(angle|position|viewpoint)|"
+    r"get (closer|lower|higher)|(lower|raise) the (camera|lens|phone))\b", re.I)
 VIEW = 768
 
 
@@ -63,13 +76,23 @@ async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("images", nargs="+", type=Path)
     ap.add_argument("--effort", help="reasoning effort; 'default' = omit the param")
+    ap.add_argument("--no-depth", action="store_true", help="don't send a depth summary")
     args = ap.parse_args()
     if args.effort:
         regions.EFFORT = "" if args.effort == "default" else args.effort
+    capture = []
     for path in args.images:
-        result = await regions.find_regions(path.read_bytes(), "image/jpeg")
+        data = path.read_bytes()
+        depth_m = None
+        if not args.no_depth:
+            import depth  # Depth Pro: loads the model on first use
+
+            depth_m, _ = await asyncio.to_thread(depth.infer_depth, data)
+        result = await regions.find_regions(data, "image/jpeg", depth_m)
         dbg = regions.last_debug
         print(f"== {path.name}  effort={dbg['effort'] or 'default'}  attempts={dbg['attempts']}")
+        if dbg.get("depth_notes"):
+            print("   " + dbg["depth_notes"].replace("\n", "\n   "))
         print(json.dumps(result, indent=2, ensure_ascii=False))
         for u in dbg["usage"]:
             print(
@@ -79,6 +102,12 @@ async def main() -> None:
             )
         print(f"   labels: {dbg['labels']}")
         print(f"   wrote {draw(path, result, dbg['labels'])}")
+        capture += [f"{path.name} {r['id']}: {r['note']}" for r in result["regions"] if CAPTURE.search(r["note"])]
+    if capture:
+        print(f"FAIL: {len(capture)} note(s) ask for a reshoot, but the photo is already taken:")
+        print("\n".join(f"   {c}" for c in capture))
+        sys.exit(1)
+    print(f"OK: {len(args.images)} image(s), no reshoot advice")
 
 
 if __name__ == "__main__":
