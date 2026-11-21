@@ -114,6 +114,13 @@ final class AppModel: CoachHost {
         RevealModel.localDepthPNG = { PhotoDepth.depthPNGmm(fromPhotoData: $0) }
         voice.register(into: reveal.renderer)
         reveal.onMic = { [weak self] in self?.toggleVoiceEdit() }
+        // The shot viewer pauses the camera coach (Live frames, ticks, director) so it never talks
+        // about the camera behind the photo; a new shot or dismiss ends voice edit on the old one.
+        reveal.onPresent = { [weak self] shown in
+            guard let self else { return }
+            if self.voice.isLive { self.voice.stop() }
+            if shown { self.coach.stop() } else { Task { await self.startCoachIfReady() } }
+        }
         reveal.onOpenRoll = { [weak self] in self?.showRoll = true }
         reveal.onShow3D = { [weak self] photo, depth in
             guard let cg = photo.cgImage else { return }
@@ -176,7 +183,7 @@ final class AppModel: CoachHost {
     }
 
     func startCoachIfReady() async {
-        guard coachEnabled, link == .online, camera.isRunning, !coach.isActive else { return }
+        guard coachEnabled, link == .online, camera.isRunning, !coach.isActive, !reveal.isShown else { return }
         #if DEBUG
         if LaunchOptions.demoCoach { return }   // the scripted coach only
         #endif

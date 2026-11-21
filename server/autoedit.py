@@ -98,7 +98,9 @@ def _mask_catalog(sid: str, rec: dict) -> dict[str, dict]:
         r = notes.get(rid) or {}
         if not (meta.get("area") or 0) or not (d / "masks" / f"{rid}.png").is_file():
             continue
-        cat[rid] = {"kind": f"region ({r.get('tag') or 'focus'})", "label": r.get("note") or rid,
+        # The region note is advice ("Tilt his chin down..."), not a name: label by its role.
+        cat[rid] = {"kind": f"region ({r.get('tag') or 'focus'})", "note": r.get("note") or "",
+                    "label": "the subject" if (r.get("tag") or "focus") == "focus" else f"{r.get('tag')} area",
                     "area": meta.get("area") or 0.0, "depth_m": meta.get("depth_m"), "url": url,
                     "path": d / "masks" / f"{rid}.png"}
     if shots._status(rec, "semantic") == "done":
@@ -133,7 +135,7 @@ def _mask_text(cat: dict) -> str:
     rows = []
     for mid, m in cat.items():
         dep = f", median depth {m['depth_m']} m" if m.get("depth_m") else ""
-        rows.append(f"- {mid}: {m['kind']}, {round(100 * m['area'], 1)}% of the image{dep}: {_words(m['label'], 20)}")
+        rows.append(f"- {mid}: {m['kind']}, {round(100 * m['area'], 1)}% of the image{dep}: {_words(m.get('note') or m['label'], 20)}")
     return "\n".join(rows) or "(no masks)"
 
 
@@ -331,9 +333,10 @@ _GLOBAL_PROPS = {k: {"type": "number"} for k in GLOBAL_KEYS}
 _LAYER_PROPS = {k: {"type": "number"} for k in LAYER_SLIDERS}
 _LAYERS = {"type": "array", "items": {"type": "object", "properties": {
     "target": {"type": "string"},
+    "name": {"type": "string", "description": "What the mask shows, 1-3 plain words (\"the can\", \"foreground clutter\")"},
     "values": {"type": "object", "properties": _LAYER_PROPS},
     "why": {"type": "string"},
-}, "required": ["target", "values"]}}
+}, "required": ["target", "name", "values"]}}
 
 PLAN_SCHEMA = {
     "type": "object",
@@ -393,7 +396,7 @@ def clean_recipe(p, cat: dict, default_subject: str | None) -> dict:
                 if c:
                     lv[k] = c
         if lv:
-            layers.append({"id": f"l{len(layers) + 1}", "target": tgt, "label": _words(cat[tgt].get("label") or tgt, 3),
+            layers.append({"id": f"l{len(layers) + 1}", "target": tgt, "label": _words(l.get("name") or cat[tgt].get("label") or tgt, 3),
                            "mask_url": cat[tgt]["url"], "values": lv})
     subject = p.get("subject") if p.get("subject") in cat else default_subject
     return {"values": vals, "layers": layers, "say": _words(p.get("say"), 12) or "Edited for you.",

@@ -37,6 +37,8 @@ struct ShotReveal: View {
                             }
                             .opacity(depthOpacity)
                     }
+                    if let w = model.wipe, !holding { WipeLayer(wipe: w, width: rect.width) }
+                    if let p = model.pulse { PulseLayer(pulse: p) }
                     if model.phase == .scanning || model.working {
                         ScanLine(height: rect.height)
                     }
@@ -62,8 +64,30 @@ struct ShotReveal: View {
                     }
             )
             .overlay(alignment: .bottom) {
-                ViewerBar(model: model)
-                    .padding(.bottom, max(geo.safeAreaInsets.bottom, 12) + 8)
+                VStack(spacing: 14) {
+                    EditNotes(model: model)
+                    ViewerBar(model: model)
+                }
+                .padding(.bottom, max(geo.safeAreaInsets.bottom, 12) + 8)
+                .background(alignment: .bottom) {
+                    if !model.log.isEmpty || model.caption != nil {
+                        LinearGradient(colors: [.black.opacity(0), .black.opacity(0.55)], startPoint: .top, endPoint: .bottom)
+                            .frame(height: 300).allowsHitTesting(false)
+                    }
+                }
+            }
+            .overlay(alignment: .topLeading) {
+                if model.working, let word = model.stageWord {
+                    Text(word)
+                        .font(GXFont.mono(11))
+                        .tracking(11 * 0.12)
+                        .foregroundStyle(ShotReveal.geminiBlue.opacity(0.9))
+                        .padding(.top, max(geo.safeAreaInsets.top, 12) + 20)
+                        .padding(.leading, 20)
+                        .transition(.opacity)
+                        .id(word)
+                        .allowsHitTesting(false)
+                }
             }
             .overlay(alignment: .topTrailing) {
                 if let photo = model.photo, let png = model.depthPNG, let show = model.onShow3D {
@@ -164,5 +188,75 @@ private struct ViewerBar: View {
         }
         .frame(height: 72)
         .padding(.horizontal, 16)
+    }
+}
+
+/// The previous render on top, cut away left to right over `RevealModel.wipeDuration`, with a thin edge.
+private struct WipeLayer: View {
+    let wipe: RevealModel.Wipe
+    let width: CGFloat
+
+    var body: some View {
+        TimelineView(.animation) { ctx in
+            let t = min(1, ctx.date.timeIntervalSince(wipe.start) / RevealModel.wipeDuration)
+            let e = t < 0.5 ? 2 * t * t : 1 - pow(-2 * t + 2, 2) / 2
+            let x = width * e
+            ZStack(alignment: .leading) {
+                Image(uiImage: wipe.before).resizable().interpolation(.high)
+                    .mask(alignment: .trailing) { Rectangle().frame(width: max(0, width - x)) }
+                Rectangle().fill(ShotReveal.geminiBlue.opacity(t < 1 ? 0.7 : 0)).frame(width: 1).offset(x: x)
+            }
+        }
+        .allowsHitTesting(false)
+        .id(wipe.id)
+    }
+}
+
+/// A changed layer's mask, tinted Gemini blue, fading in and out over `RevealModel.pulseDuration`.
+private struct PulseLayer: View {
+    let pulse: RevealModel.Pulse
+
+    var body: some View {
+        TimelineView(.animation) { ctx in
+            let t = min(1, ctx.date.timeIntervalSince(pulse.start) / RevealModel.pulseDuration)
+            Image(uiImage: pulse.image).resizable().interpolation(.high)
+                .opacity(0.5 * sin(.pi * t))
+        }
+        .allowsHitTesting(false)
+        .id(pulse.id)
+    }
+}
+
+/// Edit for Me, readable without sound: the step's caption, then one line per change (≤5,
+/// newest last, older ones fading).
+private struct EditNotes: View {
+    let model: RevealModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            if let caption = model.caption {
+                Text(caption)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Color.white.opacity(0.92))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .padding(.bottom, 4)
+                    .transition(.opacity)
+                    .id(caption)
+            }
+            let n = model.log.count
+            ForEach(Array(model.log.enumerated()), id: \.element.id) { i, line in
+                Text(line.text)
+                    .font(GXFont.mono(12))
+                    .foregroundStyle(Color.white.opacity([0.9, 0.62, 0.45, 0.33, 0.25][min(4, n - 1 - i)]))
+                    .lineLimit(1)
+                    .transition(.asymmetric(insertion: .offset(y: 6).combined(with: .opacity), removal: .opacity))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 22)
+        .animation(.easeOut(duration: 0.24), value: model.log)
+        .animation(.easeOut(duration: 0.24), value: model.caption)
+        .allowsHitTesting(false)
     }
 }

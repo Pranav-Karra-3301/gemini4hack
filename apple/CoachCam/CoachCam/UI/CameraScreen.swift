@@ -30,7 +30,9 @@ struct CameraScreen: View {
         .ignoresSafeArea()
         .background { ZStack { GXColor.void; GrainOverlay() }.ignoresSafeArea() }
         .overlay { if app.reveal.isShown { ShotReveal(model: app.reveal).transition(.opacity) } }
-        .onChange(of: app.voice.values) { _, v in app.reveal.show(values: v, layers: app.voice.layers) }
+        .onChange(of: app.voice.values) { _, v in
+            if app.voice.isLive, app.reveal.isShown { app.reveal.show(values: v, layers: app.voice.layers) }
+        }
         .onChange(of: app.reveal.isShown) { _, shown in if !shown, app.voice.isLive { app.toggleVoiceEdit() } }
         .animation(.easeOut(duration: 0.2), value: app.reveal.isShown)
         .environment(fx)
