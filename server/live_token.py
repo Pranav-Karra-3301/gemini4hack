@@ -48,6 +48,7 @@ from fastapi import APIRouter, Body
 from fastapi.responses import JSONResponse
 
 import gemini
+import live_budget
 import live_setup
 
 log = logging.getLogger("coach.live_token")
@@ -139,12 +140,18 @@ async def api_live_token(body: dict | None = Body(default=None)):
         if shot is None:
             return _err(404, f"shot {shot_id} not found")
     setup = live_setup.build_setup(mode, voice=voice, facing=facing, context=context, shot=shot)
+    over = live_budget.take()
+    if over:
+        log.warning("live token refused: %s", over["error"])
+        return JSONResponse(over, status_code=429, headers={"Retry-After": str(over["retry_after_s"])})
     try:
         tok = await mint(setup)
     except gemini.GeminiError as exc:  # HTTP or network failure that survived the retries
+        live_budget.refund()
         log.warning("live token mint failed: %s", exc)
         return _err(502, str(exc))
     except RuntimeError as exc:  # GEMINI_API_KEY is not set
+        live_budget.refund()
         log.warning("live token mint failed: %s", exc)
         return _err(500, str(exc))
     ms = int((time.perf_counter() - t0) * 1000)

@@ -40,6 +40,7 @@ LIVE_URL = (
 
 # Shared with the ephemeral-token path (live_token.py): enums, wording, and the Live setup.
 from live_setup import DIRECTIONS_TEXT, FLASH, FRAMING_TEXT, INTENTS, MODES, MOVES, REACTIONS  # noqa: E402,F401
+import live_budget  # noqa: E402
 import live_setup  # noqa: E402
 
 
@@ -347,6 +348,11 @@ async def api_live(ws: WebSocket):
     if not os.environ.get("GEMINI_API_KEY"):
         await ws.send_text(json.dumps({"error": "GEMINI_API_KEY is not set on the server"}))
         await ws.close(code=1011)
+        return
+    over = live_budget.take()
+    if over:
+        await ws.send_text(json.dumps(over))
+        await ws.close(code=1013, reason="live budget reached")
         return
     q = ws.query_params
     voice = q.get("voice", "1") not in ("0", "false", "off")
