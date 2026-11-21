@@ -1,0 +1,19 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# worktrees (see CONTRIBUTING.md)
+.worktrees/
+.claude/worktrees/
+.claude/settings.local.json
+
+# dependencies and build output
+node_modules/
+dist/
+.venv/
+__pycache__/
+out/
+
+# OS
+.DS_Store
