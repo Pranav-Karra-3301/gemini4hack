@@ -1,0 +1,6 @@
+// Signing for CoachCam. DEVELOPMENT_TEAM stays empty so you pick your team in Xcode
+// (Signing & Capabilities). To keep a team across `xcodegen generate`, put
+// `DEVELOPMENT_TEAM = <your team id>` in apple/Local.xcconfig (gitignored); it is included here.
+CODE_SIGN_STYLE = Automatic
+DEVELOPMENT_TEAM =
+#include? "../../Local.xcconfig"

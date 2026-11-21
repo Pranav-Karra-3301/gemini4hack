@@ -1,0 +1,129 @@
+{
+  "layerId": "a45688e9-183e-40dc-962a-76904a6abb39",
+  "slug": "key-shutter-lantern-ready",
+  "element": "Keys row shutter key 229x72, Ready 1 (row 2)",
+  "layerType": "shape",
+  "shapeShaderMode": "custom",
+  "shapeType": "rectangle",
+  "frame": {
+    "left": 322.5,
+    "top": 962,
+    "width": 229,
+    "height": 72,
+    "leftMode": "fixed px",
+    "topMode": "fixed px",
+    "anchor": "center (anchorPoint 8)",
+    "artboard": [
+      1200,
+      1140
+    ]
+  },
+  "fill": "#070B16",
+  "borderRadius": 1,
+  "stroke": null,
+  "opacity": 1,
+  "blendMode": "NORMAL",
+  "speed": 0.5,
+  "animating": true,
+  "font": null,
+  "controls": [
+    {
+      "key": "aiGlow",
+      "label": "Ready",
+      "uniform": "uAiGlow",
+      "type": "float",
+      "value": 1,
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    {
+      "key": "aiVoice",
+      "label": "Voice",
+      "uniform": "uAiVoice",
+      "type": "float",
+      "value": 0,
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    {
+      "key": "aiPress",
+      "label": "Press",
+      "uniform": "uAiPress",
+      "type": "float",
+      "value": 0,
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    {
+      "key": "aiLightAngle",
+      "label": "Light angle (turns)",
+      "uniform": "uAiLightAngle",
+      "type": "float",
+      "value": 0.875,
+      "min": 0,
+      "max": 1,
+      "step": 0.0027
+    },
+    {
+      "key": "aiSwirl",
+      "label": "Drift speed",
+      "uniform": "uAiSwirl",
+      "type": "float",
+      "value": 0.5,
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    {
+      "key": "aiCross",
+      "label": "Plus",
+      "uniform": "uAiCross",
+      "type": "float",
+      "value": 1,
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    {
+      "key": "aiGrain",
+      "label": "Grain",
+      "uniform": "uAiGrain",
+      "type": "float",
+      "value": 0.75,
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    {
+      "key": "speed",
+      "label": "Speed (engine uTime rate)",
+      "uniform": null,
+      "type": "engine",
+      "value": 0.5,
+      "min": 0,
+      "max": 2,
+      "step": 0.01
+    }
+  ],
+  "engineUniforms": [
+    "uTime",
+    "uResolution",
+    "uArtboardResolution",
+    "uMousePos",
+    "uBgTexture",
+    "uFillAlpha",
+    "uBorderRadius"
+  ],
+  "textures": [],
+  "animations": {
+    "appear": [],
+    "hover": [],
+    "scroll": [],
+    "mousemove": [],
+    "note": "No Events-tab animations on this layer; all motion is in-shader from uTime (see MANIFEST.md)."
+  },
+  "trackMouse": 0
+}

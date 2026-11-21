@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Coach Cam engines lab</title>
+  <link rel="icon" href="data:," />
+  <style>
+    body { font: 12px/1.4 ui-monospace, Menlo, monospace; margin: 8px; }
+    video { width: 320px; background: #000; display: block; margin-bottom: 6px; }
+    button { font: inherit; margin-right: 4px; }
+    #log { white-space: pre-wrap; height: 60vh; overflow: auto; border: 1px solid #ccc; padding: 4px; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <!-- Dev-only lab for the Coach Cam engines: ?engine=live|decide [&voice=0] [&facing=user]
+       [&auto=1 start without a click] [&stopAfter=40 stop after N seconds]. -->
+  <video id="video" autoplay playsinline muted></video>
+  <div>
+    <button id="start">Start</button>
+    <button id="stop" disabled>Stop</button>
+    <button id="voice">Voice: on</button>
+    <span id="info"></span>
+    mic <meter id="level" min="0" max="1" value="0"></meter> <span id="vad"></span>
+  </div>
+  <pre id="log"></pre>
+  <script type="module" src="./engines.js"></script>
+</body>
+</html>
