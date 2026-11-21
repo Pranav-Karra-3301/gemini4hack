@@ -1,6 +1,10 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = ["huggingface_hub"]
+# ///
 """Fetch Apple's Core ML Depth Pro 2 S into the iPhone app (no conversion needed).
 
-  server/.venv/bin/python -I tools/depthpro2_coreml/fetch.py
+  uv run tools/depthpro2_coreml/fetch.py
 
 Downloads `depthpro2-s_w4.mlpackage` from apple/DepthPro2-coreml (pinned revision) into a fresh
 temp dir and copies it to apple/CoachCam/CoachCam/Resources/Models/DepthPro2S.mlpackage, which

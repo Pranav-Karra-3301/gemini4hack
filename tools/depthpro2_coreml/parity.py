@@ -2,14 +2,16 @@
 
 The two halves need different environments, so run it twice:
 
-  # 1. PyTorch reference (the server's venv has torch + depth_pro_2)
-  server/.venv/bin/python -I tools/depthpro2_coreml/parity.py torch PHOTO.jpg /tmp/dp2-ref.npz
+  # 1. PyTorch reference (torch + depth_pro_2)
+  uv run --python 3.12 --with torch --with numpy --with pillow \
+    --with "depth-pro-2 @ git+https://github.com/apple-aiml-research/ml-depth-pro-2" \
+    python -I tools/depthpro2_coreml/parity.py torch PHOTO.jpg /tmp/dp2-ref.npz
   # 2. Core ML (any venv with coremltools + pillow + numpy) and the comparison
   python -I tools/depthpro2_coreml/parity.py coreml /tmp/dp2-ref.npz DepthPro2S.mlpackage
 
 The photo is fitted into the model's 854x480 frame the same way the app does it
 (DepthPro2.swift): scale to fit, then replicate-pad right and bottom. PyTorch runs on the
-unpadded, resized photo at its native size, as the server does.
+unpadded, resized photo at its native size.
 """
 
 from __future__ import annotations

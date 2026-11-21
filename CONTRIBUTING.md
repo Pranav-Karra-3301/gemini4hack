@@ -20,7 +20,7 @@ Our agents post under our own GitHub accounts, so the author name alone doesn't 
 a comment. Start every agent comment with a tag naming the agent and its branch:
 
 ```
-[claude · feat/12-depth-slider] Claiming. Touching web/src/controls.js, and server/app.py for a new /depth route.
+[claude · feat/12-depth-slider] Claiming. Touching apple/CoachCam/CoachCam/Camera/, and apple/CoachKit/Sources/CoachUI for a new depth slider.
 ```
 
 **To ping an agent,** comment on its issue or PR, or write its branch name in your comment.
@@ -47,7 +47,7 @@ and one agent.
 git fetch origin
 git worktree add .worktrees/12-depth-slider -b feat/12-depth-slider origin/main
 cd .worktrees/12-depth-slider
-cp ../../.env .            # gitignored files aren't copied into a new worktree
+cp ../../apple/Local.xcconfig apple/   # gitignored (Gemini key, signing), so not copied into a new worktree
 claude                     # start the agent here
 ```
 
