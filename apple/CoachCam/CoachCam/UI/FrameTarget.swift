@@ -50,6 +50,14 @@ final class SubjectTracker: FrameSink, @unchecked Sendable {
     /// The latest director answer's framing (main thread), for `FrameTargetOverlay(input:)`.
     private(set) var input: FrameTargetInput?
 
+    /// Edge-glow multiplier: 1 with no framing target, falling to 0 as the tracked subject
+    /// reaches the target, so the glow fades as the gap closes. Main thread.
+    var glowScale: Double {
+        guard let t = input?.target, let s = tracked ?? input?.subject else { return 1 }
+        let gap = 1 - FrameTargetOverlay.iou(s, t)
+        return min(max((gap - 0.25) / 0.5, 0), 1)
+    }
+
     /// A new director answer: keeps its framing and re-seeds the track from its subject box.
     /// Call on the main thread.
     func direct(_ input: FrameTargetInput?) {
@@ -157,6 +165,8 @@ final class FrameSinks: FrameSink, @unchecked Sendable {
 /// Framing guidance with no arrows and no text: a thin light frame hugging the subject, a soft
 /// dashed Gemini-blue ghost where it should go, one glowing frame (and a success haptic, once)
 /// when they meet, and a level line that straightens and fades as the phone is levelled.
+/// The ghost's size against the subject frame shows how far to step back (smaller) or in (bigger).
+/// Once locked, both frames fade out; they come back if the framing drifts off.
 /// Place it over the preview, same size as the card (the preview is a 3:4 frame, aspect fill).
 struct FrameTargetOverlay: View {
     let input: FrameTargetInput?
@@ -168,6 +178,8 @@ struct FrameTargetOverlay: View {
     }
 
     @State private var aligned = false
+    /// Locked a moment ago: the frames have faded out.
+    @State private var settled = false
     @State private var roll = RollMeter()
     /// Device roll when the current `levelDeg` arrived, so the line follows the phone live.
     @State private var rollAtAnswer: Double = 0
@@ -196,6 +208,7 @@ struct FrameTargetOverlay: View {
                         .shadow(color: GXColor.gemini.opacity(aligned ? 0.9 : 0), radius: 10)
                         .shadow(color: GXColor.gemini.opacity(aligned ? 0.6 : 0), radius: 3)
                         .place(r)
+                        .opacity(settled ? 0 : 1)
                 }
                 levelLine(width: geo.size.width)
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
@@ -207,7 +220,13 @@ struct FrameTargetOverlay: View {
                 let next = aligned ? v >= Self.leaveIoU : v >= Self.enterIoU
                 guard next != aligned else { return }
                 aligned = next
-                if next { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+                if next { UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.8) }
+            }
+            .task(id: aligned) {
+                guard aligned else { settled = false; return }
+                try? await Task.sleep(for: .milliseconds(900))
+                guard !Task.isCancelled, aligned else { return }
+                withAnimation(.easeOut(duration: 0.6)) { settled = true }
             }
         }
         .onChange(of: input, initial: true) { _, _ in rollAtAnswer = roll.degrees }

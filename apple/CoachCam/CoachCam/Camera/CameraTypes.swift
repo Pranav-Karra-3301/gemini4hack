@@ -129,6 +129,21 @@ protocol CaptureEngine: AnyObject, Sendable {
     func capture() async throws -> CapturedPhoto
     /// Rotation of the device relative to the sensor, for upright frames and photos (degrees).
     func setCaptureRotation(_ degrees: CGFloat)
+    /// Live depth for the viewfinder tile: while on, `handler` gets ~15 fps frames on the main
+    /// queue. Cameras without streaming depth (mock, non-LiDAR) never call it.
+    func setLiveDepth(_ on: Bool, handler: (@MainActor (LiveDepthFrame?) -> Void)?)
+}
+
+extension CaptureEngine {
+    func setLiveDepth(_ on: Bool, handler: (@MainActor (LiveDepthFrame?) -> Void)?) {}
+}
+
+/// One colour-mapped live depth frame (sensor orientation; `orientation` makes it upright) and
+/// the median depth of the frame's centre, in metres.
+struct LiveDepthFrame: @unchecked Sendable {
+    let image: CGImage
+    let orientation: CGImagePropertyOrientation
+    let subjectMetres: Double?
 }
 
 enum CameraError: LocalizedError {

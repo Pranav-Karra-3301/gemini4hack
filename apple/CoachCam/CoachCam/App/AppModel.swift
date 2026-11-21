@@ -66,6 +66,17 @@ final class AppModel: CoachHost {
         }
     }
     var saveToPhotos: Bool { didSet { defaults.set(saveToPhotos, forKey: "photos.save") } }
+    /// The viewfinder's live depth tile (Settings → Live depth). The depth stream runs only while on.
+    var liveDepth: Bool {
+        didSet {
+            defaults.set(liveDepth, forKey: "depth.live")
+            syncLiveDepth()
+        }
+    }
+    /// Newest live depth frame (~15 fps); kept when the tile turns off so it can fade out.
+    private(set) var depthFrame: LiveDepthFrame?
+    /// Median depth at the frame's centre (metres), from the live depth stream; nil without it.
+    @ObservationIgnored private(set) var subjectMetres: Double?
 
     @ObservationIgnored private let defaults = UserDefaults.standard
     @ObservationIgnored private var actorReset: Task<Void, Never>?
@@ -73,15 +84,18 @@ final class AppModel: CoachHost {
     @ObservationIgnored private var lastFocusWrite = Date.distantPast
 
     init() {
-        defaults.register(defaults: ["coach.enabled": true, "coach.voice": true, "photos.save": true])
+        defaults.register(defaults: ["coach.enabled": true, "coach.voice": true, "photos.save": true,
+                                     "depth.live": true])
         coachEnabled = defaults.bool(forKey: "coach.enabled")
         voiceOn = defaults.bool(forKey: "coach.voice")
         saveToPhotos = defaults.bool(forKey: "photos.save")
+        liveDepth = defaults.bool(forKey: "depth.live")
         camera = CameraController(mock: LaunchOptions.mockCamera)
         coach.voiceOn = voiceOn
         coach.host = self
         camera.engine.frameSink = FrameSinks([coach.frames, SubjectTracker.shared])
         camera.onSnapshot = { [weak self] s in self?.syncInstruments(s) }
+        syncLiveDepth()
         reveal.speaker = { [weak self] line in
             guard self?.voiceOn == true else { return }
             Speaker.shared.say(line)
@@ -270,7 +284,24 @@ final class AppModel: CoachHost {
 
     // MARK: CoachHost
 
-    var coachStateLine: String { camera.snapshot.stateLine }
+    var coachStateLine: String {
+        guard let m = subjectMetres else { return camera.snapshot.stateLine }
+        return camera.snapshot.stateLine + String(format: ", subject_m %.1f", m)
+    }
+
+    private func syncLiveDepth() {
+        if liveDepth {
+            depthFrame = nil
+            camera.engine.setLiveDepth(true) { [weak self] frame in
+                guard let self, self.liveDepth else { return }
+                self.depthFrame = frame
+                self.subjectMetres = frame?.subjectMetres
+            }
+        } else {
+            camera.engine.setLiveDepth(false, handler: nil)
+            subjectMetres = nil
+        }
+    }
 
     func coachSetCamera(_ settings: CameraSettings) async -> CameraSettings {
         let applied = await camera.apply(settings)

@@ -114,6 +114,11 @@ private struct Viewfinder: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
             if app.camera.denied { CameraDeniedNote() }
+            LiveDepthTile()
+                .opacity(fx.dot)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(.top, 14)
+                .padding(.trailing, 14)
             ViewfinderHUD()
         }
         .frame(width: size.width, height: size.height)
@@ -163,6 +168,46 @@ private struct Viewfinder: View {
     }
 }
 
+/// The live depth map in a small tile (Settings → Live depth): near is bright. Hidden when the
+/// camera has no streaming depth.
+private struct LiveDepthTile: View {
+    @Environment(AppModel.self) private var app
+
+    var body: some View {
+        let frame = app.depthFrame
+        let shown = app.liveDepth && frame != nil
+        ZStack {
+            GXColor.night
+            if let frame {
+                Image(decorative: frame.image, scale: 1, orientation: Image.Orientation(frame.orientation))
+                    .resizable()
+                    .scaledToFill()
+            }
+        }
+        .frame(width: 96, height: 128)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .stroke(GXColor.frost.opacity(0.22), lineWidth: 1))
+        .shadow(color: .black.opacity(0.35), radius: 8, y: 2)
+        .opacity(shown ? 1 : 0)
+        .scaleEffect(shown ? 1 : 0.94, anchor: .topTrailing)
+        .animation(.easeInOut(duration: 0.28), value: shown)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+private extension Image.Orientation {
+    init(_ o: CGImagePropertyOrientation) {
+        switch o {
+        case .right: self = .right
+        case .down: self = .down
+        case .left: self = .left
+        default: self = .up
+        }
+    }
+}
+
 /// The card's vignette: a soft elliptical falloff, an 80pt inner shadow and a 1px frost rim.
 private struct Vignette: View {
     let radius: CGFloat
@@ -204,7 +249,7 @@ private struct GuideGlow: View {
             case .medium: k = 0.8
             case .large: k = 1
             }
-            return (Self.cue(g, tilt: tilt.angle), k)
+            return (Self.cue(g, tilt: tilt.angle), k * SubjectTracker.shared.glowScale)
         }
         return (.hold, 1)
     }

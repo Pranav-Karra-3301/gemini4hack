@@ -131,6 +131,7 @@ final class CoachSession {
         phase = .live
         log.info("coach on: \(GeminiDirect.fastModel, privacy: .public), agent loop")
         applyVoice()
+        Speaker.shared.warmUp()
         loop = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(300))
@@ -159,6 +160,7 @@ final class CoachSession {
         frames.enabled = false
         audio?.stop()
         Speaker.shared.stop()
+        clearFraming()
         gemini = nil
         history = []
         pendingUser = nil
@@ -505,6 +507,7 @@ final class CoachSession {
         switch tool {
         case .guide(let d, let s):
             showGuide(d, s)
+            showFraming(d, call.args)
             return ["ok": true]
         case .setCamera(let settings):
             guard let host else { return ["ok": false, "error": "no camera"] }
@@ -572,12 +575,31 @@ final class CoachSession {
         }
     }
 
+    /// The visual "how far": a ghost frame at `target_box` that the tracked subject (seeded from
+    /// `subject_box`) slides into. Hold, or a move without both boxes, clears it (one focus point).
+    private func showFraming(_ d: GuideDirection, _ args: [String: JSONValue]) {
+        func box(_ key: String) -> [Double]? {
+            guard case .array(let a)? = args[key] else { return nil }
+            let v = a.compactMap(\.doubleValue)
+            return v.count == 4 ? v : nil
+        }
+        let input = FrameTargetInput(subjectBox: box("subject_box"), targetBox: box("target_box"), levelDeg: nil)
+        guard d != .hold, input.subject != nil, input.target != nil else { clearFraming(); return }
+        SubjectTracker.shared.direct(input)
+    }
+
+    private func clearFraming() {
+        SubjectTracker.shared.direct(nil)
+        SubjectTracker.shared.clear()
+    }
+
     /// After any capture: clear the ready state and tell the coach next turn.
     func photoTaken(byCoach: Bool) {
         ready = false
         saidReady = false
         readyStreak = 0
         guide = nil
+        clearFraming()
         readyLostToMove = false
         drift.clearReady()      // keep the subject anchor: a retake of the same subject is common
         pendingNotes.append(byCoach ? "photo taken and saved" : "the user took a photo")

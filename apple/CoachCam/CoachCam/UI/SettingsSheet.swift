@@ -18,6 +18,7 @@ struct SettingsSheet: View {
                             if on { Task { await app.startCoachIfReady() } } else { app.coach.stop() }
                         }))
                     Toggle("Gemini voice", isOn: $app.voiceOn)
+                    Toggle("Live depth", isOn: $app.liveDepth)
                     if let ms = app.coach.connectMs {
                         LabeledContent("Connect time", value: "\(ms) ms")
                     }

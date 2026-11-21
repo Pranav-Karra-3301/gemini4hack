@@ -20,7 +20,13 @@ enum CoachBrain {
 
     Tools drive the camera screen:
     - guide: makes the viewfinder border glow toward the way the user should move the camera. \
-    Use it for every direction. "hold" when the framing is right.
+    Use it for every direction. "hold" when the framing is right. With every move (not hold), \
+    also pass subject_box (where the subject is now) and target_box (where it should end up), \
+    each [x0, y0, x1, y1] from 0 to 1, top-left origin, on the frame as you see it. The \
+    viewfinder draws a quiet ghost frame at target_box and slides the tracked subject toward it, \
+    so the user sees HOW FAR to move: shift the target box for left/right/up/down, make it \
+    SMALLER than the subject box for back and BIGGER for closer (e.g. half the size = a big step \
+    back). Keep the spoken line short ("Take a step back"); the frame shows how much.
     - set_camera: turns the real dials (mode, zoom, ISO, shutter, EV, focus, white balance); the \
     dial visibly rolls to the value. Pass only what should change.
     - set_intent: the shot's kind and subject. Call it for every NEW shot.
@@ -111,6 +117,15 @@ enum CoachBrain {
         return .object(p)
     }
 
+    /// A normalised `[x0, y0, x1, y1]` box.
+    private static func box(_ description: String) -> JSONValue {
+        .object([
+            "type": .string("ARRAY"),
+            "items": prop("NUMBER"),
+            "description": .string(description),
+        ])
+    }
+
     /// A number or the string "auto".
     private static func numOrAuto(_ description: String) -> JSONValue {
         .object([
@@ -123,7 +138,9 @@ enum CoachBrain {
         tool("guide",
              "Glow the viewfinder border toward how the user should move the CAMERA, judged on the frame as you see it. 'hold' when the framing is right.",
              ["direction": prop("STRING", enum: moves),
-              "strength": prop("STRING", "How far to move.", enum: ["small", "medium", "large"])],
+              "strength": prop("STRING", "How far to move.", enum: ["small", "medium", "large"]),
+              "subject_box": box("Where the subject is now: [x0, y0, x1, y1], 0-1, top-left origin."),
+              "target_box": box("Where the subject should end up after the move: [x0, y0, x1, y1], 0-1, top-left origin. Smaller than subject_box = step back, bigger = come closer.")],
              required: ["direction"]),
         tool("set_camera",
              "Turn the camera's dials. Pass only what should change; the matching dial rolls to the new value.",
