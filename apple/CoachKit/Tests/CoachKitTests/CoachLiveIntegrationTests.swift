@@ -12,7 +12,7 @@ import Testing
 @testable import CoachLive
 
 @Suite struct CoachLiveIntegrationTests {
-    static let sample = "/Users/pranav/developer/gemini4hack/web/public/samples/img-1216.jpg"
+    static let sample = CoachEditFixtures.samplesDir.appendingPathComponent("img-1216.jpg").path
 
     /// Collects events with arrival times (seconds since `t0`).
     actor Recorder {
