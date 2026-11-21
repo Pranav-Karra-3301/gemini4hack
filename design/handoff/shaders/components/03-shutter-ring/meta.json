@@ -1,0 +1,109 @@
+{
+  "layerId": "5ead6365-d0e3-4b4f-b6a6-b5b42de587b9",
+  "slug": "shutter-ring",
+  "element": "Shutter C: bead-blasted ring shutter (160px circle)",
+  "layerType": "shape",
+  "shapeShaderMode": "custom",
+  "shapeType": "circle",
+  "frame": {
+    "left": 0.54167,
+    "top": 230,
+    "width": 160,
+    "height": 160,
+    "leftMode": "relative (fraction of 1200px artboard width)",
+    "topMode": "fixed px",
+    "anchor": "center (anchorPoint 8)",
+    "artboard": [
+      1200,
+      1140
+    ]
+  },
+  "fill": "#0A0E18",
+  "borderRadius": 0,
+  "stroke": null,
+  "opacity": 1,
+  "blendMode": "NORMAL",
+  "speed": null,
+  "animating": false,
+  "font": null,
+  "controls": [
+    {
+      "key": "aiScale",
+      "label": "Scale",
+      "uniform": "uAiScale",
+      "type": "float",
+      "value": 1,
+      "min": 0.5,
+      "max": 1.5,
+      "step": 0.01
+    },
+    {
+      "key": "aiGlow",
+      "label": "Ready",
+      "uniform": "uAiGlow",
+      "type": "float",
+      "value": 0,
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    {
+      "key": "aiPress",
+      "label": "Press",
+      "uniform": "uAiPress",
+      "type": "float",
+      "value": 0,
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    {
+      "key": "aiLightAngle",
+      "label": "Light angle (turns)",
+      "uniform": "uAiLightAngle",
+      "type": "float",
+      "value": 0.875,
+      "min": 0,
+      "max": 1,
+      "step": 0.0027
+    },
+    {
+      "key": "aiBrush",
+      "label": "Bead blast",
+      "uniform": "uAiBrush",
+      "type": "float",
+      "value": 0.55,
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    },
+    {
+      "key": "aiCross",
+      "label": "Plus",
+      "uniform": "uAiCross",
+      "type": "float",
+      "value": 1,
+      "min": 0,
+      "max": 1,
+      "step": 0.01
+    }
+  ],
+  "engineUniforms": [
+    "uTime",
+    "uResolution",
+    "uArtboardResolution",
+    "uMousePos",
+    "uBgTexture",
+    "uFillAlpha",
+    "uBorderRadius"
+  ],
+  "textures": [],
+  "animations": {
+    "appear": [],
+    "hover": [],
+    "scroll": [],
+    "mousemove": [],
+    "note": "No Events-tab animations on this layer; all motion is in-shader from uTime (see MANIFEST.md)."
+  },
+  "trackMouse": 0
+}

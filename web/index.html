@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <link rel="icon" href="data:," />
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0a09" />
+    <title>Lighting coach</title>
+  </head>
+  <body>
+    <div class="app">
+      <main class="stage">
+        <div class="viewport" id="viewport">
+          <canvas id="gl"></canvas>
+          <div class="hint" id="hint"></div>
+        </div>
+        <nav class="strip">
+          <div class="thumbs" id="thumbs"></div>
+          <label class="upload">
+            <input type="file" id="file" accept="image/*" hidden />
+            Upload photo
+          </label>
+          <span class="drop-hint">or drop one anywhere</span>
+        </nav>
+      </main>
+
+      <aside class="panel">
+        <header class="panel-head">
+          <span class="safelight" id="safelight" title="working"></span>
+          <div>
+            <h1>Lighting coach</h1>
+            <p class="sub">Depth Pro · Gemini 4 Argon<span class="mock-badge" id="mock-badge" hidden>mock</span></p>
+          </div>
+        </header>
+
+        <section class="block" id="scores">
+          <h2>Light &amp; composition</h2>
+          <div class="body"></div>
+        </section>
+
+        <section class="block" id="regions">
+          <h2>Notes <span class="h2-aside">Esc clears</span></h2>
+          <div class="body"></div>
+        </section>
+
+        <footer class="panel-foot">
+          <span class="depth-status" id="depth-status"></span>
+          <label class="depth-ctl" title="relief: 0 = flat">
+            <span>Depth</span>
+            <input type="range" id="depth-g" min="0" max="0.54" step="0.01" />
+            <output id="depth-out"></output>
+          </label>
+        </footer>
+      </aside>
+    </div>
+
+    <div class="drop"><div>Drop to develop</div></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

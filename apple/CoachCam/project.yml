@@ -1,0 +1,65 @@
+name: CoachCam
+options:
+  bundleIdPrefix: dev.coach
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+packages:
+  CoachKit:
+    path: ../CoachKit
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  CoachCam:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: CoachCam
+        excludes:
+          - "**/*.md"
+    configFiles:
+      # Optional per-machine signing (DEVELOPMENT_TEAM) via apple/Local.xcconfig, which is gitignored.
+      Debug: CoachCam/Signing.xcconfig
+      Release: CoachCam/Signing.xcconfig
+    dependencies:
+      - package: CoachKit
+        product: CoachModels
+      - package: CoachKit
+        product: CoachAPI
+      - package: CoachKit
+        product: CoachLive
+      - package: CoachKit
+        product: CoachUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.coach.cam
+        PRODUCT_NAME: CoachCam
+        INFOPLIST_FILE: CoachCam/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+        ENABLE_PREVIEWS: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        SWIFT_STRICT_CONCURRENCY: minimal
+      configs:
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+        Release:
+          # The mock camera's sample photo only ships in Debug builds.
+          EXCLUDED_SOURCE_FILE_NAMES: MockSample.jpg
+schemes:
+  CoachCam:
+    build:
+      targets:
+        CoachCam: all
+    run:
+      config: Debug
+    archive:
+      config: Release

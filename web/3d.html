@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#08080A" />
+    <link rel="icon" href="data:," />
+    <title>3D Coach</title>
+  </head>
+  <body data-view="scene" data-step="-1">
+    <script>if (!new URLSearchParams(location.search).has('sample')) document.body.dataset.view = 'upload';</script>
+    <canvas id="gl"></canvas>
+    <div class="vignette" aria-hidden="true"></div>
+    <div class="frame" id="frame" aria-hidden="true"></div>
+    <div id="markers" class="markers"></div>
+
+    <aside class="note" id="note" aria-live="polite">
+      <div class="note-card"><div class="note-stack"></div></div>
+    </aside>
+
+    <header class="top">
+      <button class="tb back" id="back" aria-label="Back to photos"></button>
+      <span class="wordmark">3D COACH</span>
+      <span class="status" id="status" data-busy="0" data-flat="0"><i></i><b>FLAT</b></span>
+      <button class="tb add" id="add" aria-label="New photo"></button>
+    </header>
+
+    <section class="scores" id="scores" data-state="none" aria-label="Scores"></section>
+    <aside class="score-card" id="score-card" aria-live="polite"></aside>
+
+    <aside class="rf-note" id="rf-note" aria-live="polite"><i></i><div><p class="rf-line"></p><p class="rf-sub"></p></div></aside>
+
+    <footer class="bar">
+      <span class="hint">DRAG · ORBIT</span>
+      <div class="stepper" id="stepper">
+        <button class="sb prev" id="prev" aria-label="Previous step"></button>
+        <div class="dots" id="dots" role="tablist" aria-label="Steps"></div>
+        <button class="sb next" id="next" data-mode="start" aria-label="Start"></button>
+      </div>
+    </footer>
+
+    <section class="upload" id="upload" data-state="idle" aria-label="Pick a photo">
+      <button class="tb up-back" id="up-back" aria-label="Back to the scene"></button>
+      <span class="wordmark up-mark">3D COACH</span>
+      <label class="drop-zone" id="drop-zone">
+        <input type="file" id="file" accept="image/*" hidden />
+        <span class="up-btn"><svg class="up-ring" viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="57" pathLength="100" /></svg><span class="up-i"></span></span>
+        <span class="up-pct" id="up-pct">0%</span>
+        <span class="up-title"><span class="wide">Drop a photo</span><span class="narrow">Pick a photo</span></span>
+        <span class="up-sub">IT BECOMES A SCENE YOU CAN WALK AROUND</span>
+      </label>
+      <div class="samples">
+        <p class="up-label">OR TRY ONE</p>
+        <div class="grid" id="samples"></div>
+      </div>
+    </section>
+
+    <script type="module" src="/src/three-d/main.js"></script>
+  </body>
+</html>

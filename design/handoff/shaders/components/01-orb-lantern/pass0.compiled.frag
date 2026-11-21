@@ -1,0 +1,152 @@
+#version 300 es
+// Copyright (c) Unicorn Studio. Licensed under the Unicorn Studio Commercial License.
+// Unauthorized copying, redistribution, or use in competing products is prohibited.
+precision highp float;in vec2 vTextureCoord;
+in vec3 vVertexPosition;uniform vec2 uArtboardResolution;uniform vec2 uResolution;
+uniform vec2 uMousePos;
+uniform sampler2D uBgTexture;const float TAU = 6.28318530718;
+const float PI = 3.14159265359;out vec4 fragColor;vec2 rotate2D(vec2 p, float angle) {
+float s = sin(angle);
+float c = cos(angle);
+return vec2(p.x * c - p.y * s, p.x * s + p.y * c);
+}vec2 getAnchorOffsets() {
+return vec2(0.5, 0.5);
+}vec3 getFillColor(vec2 localPos, vec2 elementSize, float signedDist, float maxInset) {
+vec2 halfSize = elementSize * 0.5;
+vec2 p = localPos - halfSize;return vec3(0.027450980392156862, 0.043137254901960784, 0.08627450980392157);
+}float sdBox(vec2 p, vec2 b) {
+vec2 d = abs(p) - b;
+return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+}float sdEllipse(vec2 p, vec2 ab) {
+vec2 q = p / ab;
+return (length(q) - 1.0) * min(ab.x, ab.y);
+}float sdShape(vec2 canvasPosPx, vec2 elementPosPx, vec2 elementSizePx, float rotationTurns) {
+vec2 p = vec2(0.0);
+vec2 halfSize = vec2(0.0);elementSizePx = abs(elementSizePx);vec2 centerPx = elementPosPx + elementSizePx * 0.5;
+vec2 rel = canvasPosPx - centerPx;
+vec2 local = rotate2D(rel, -rotationTurns * TAU) + elementSizePx * 0.5;
+p = local - elementSizePx * 0.5;
+halfSize = elementSizePx * 0.5;return sdEllipse(p, vec2(max(halfSize.x, 0.00001), max(halfSize.y, 0.00001)));
+return sdBox(p, halfSize);
+}struct ShapeSample {
+float signedDistance;
+float coverage;
+vec2 localPosition;
+vec2 elementSize;
+vec3 fillColor;
+vec2 mousePosition;
+};vec4 shadeShape(ShapeSample shapeSample);uniform float uTime;uvec2 pcg2d(uvec2 v) {
+v = v * 1664525u + 1013904223u;
+v.x += v.y * v.y * 1664525u + 1013904223u;
+v.y += v.x * v.x * 1664525u + 1013904223u;
+v ^= v >> 16;
+v.x += v.y * v.y * 1664525u + 1013904223u;
+v.y += v.x * v.x * 1664525u + 1013904223u;
+return v;
+}float randFibo(vec2 p) {
+uvec2 v = floatBitsToUint(p);
+v = pcg2d(v);
+uint r = v.x ^ v.y;
+return float(r) / float(0xffffffffu);
+}float deband() {
+return (randFibo(gl_FragCoord.xy) - 0.5) / 255.0;
+}vec2 lightField(vec3 p, float t, float agitate) {
+vec3 q = p * 1.35;
+q.xy = rotate2D(q.xy, t);
+q.xz = rotate2D(q.xz, t * 0.3 + 0.8);
+q += (0.30 + 0.14 * agitate) * sin(q.zxy * 2.1 + vec3(0.0, 1.7, 3.1) + t * 0.35);
+q += 0.16 * sin(q.yzx * 3.7 + vec3(2.3, 0.4, 1.1) - t * 0.5);
+float s = sin(q.x * 2.7 + q.y * 1.2) + sin(q.y * 2.3 - q.z * 1.8 + 1.4) + sin(q.z * 2.5 + q.x * 1.6 + 2.6);
+float hue = 0.5 + 0.5 * sin(q.x * 1.3 - q.z * 1.1 + q.y * 0.8 + 0.7);
+return vec2(s, hue);
+}vec4 shadeShape(ShapeSample shapeSample) {
+vec2 size = shapeSample.elementSize;
+vec2 p = shapeSample.localPosition - size * 0.5;
+float press = clamp(0.0000, 0.0, 1.0);
+float ready = clamp(0.3500, 0.0, 1.0);
+float R = min(size.x, size.y) * 0.5 * 1.0000 * (1.0 - 0.06 * press);
+float d = length(p);
+float sd = d - R;
+float aa = max(fwidth(sd), 0.0001);float ang = 0.8750 * TAU;
+vec2 L = vec2(cos(ang), sin(ang));
+float arm = R * 0.2115;
+float crossD = min(sdBox(p, vec2(arm, 0.75)), sdBox(p, vec2(0.75, arm)));
+vec2 psS = p - L * 0.7;
+float crossS = min(sdBox(psS, vec2(arm, 0.75)), sdBox(psS, vec2(0.75, arm)));
+vec2 psH = p + L * 0.7;
+float crossH = min(sdBox(psH, vec2(arm, 0.75)), sdBox(psH, vec2(0.75, arm)));
+float aaC = max(fwidth(crossD), 0.0001);float reach = R * 1.1;
+if (sd > reach) {
+return vec4(0.0);
+}vec3 blue = vec3(0.298, 0.553, 1.0);
+vec3 iris = vec3(0.604, 0.486, 0.965);
+vec3 frost = vec3(0.933, 0.953, 1.0);
+float time = uTime * 0.0262;
+float voice = clamp(0.0000, 0.0, 1.0) * (0.7 + 0.3 * sin(uTime * 0.21));
+float glowGain = (0.55 + 0.75 * ready) * (1.0 + 0.9 * voice) * (1.0 + 0.6 * press) * 2.4;
+vec2 nrm = p / max(d, 0.0001);
+float lowSide = 0.5 + 0.5 * dot(nrm, -L);
+float xo = max(sd, 0.0) / (R * 0.28);
+float halo = (0.05 + 0.3 * ready) * (1.0 + 0.6 * voice) / (1.0 + xo * xo);
+halo *= 1.0 - smoothstep(reach * 0.45, reach, sd);
+vec3 outC = mix(blue, iris, 0.35 * lowSide) * halo * (0.7 + 0.5 * lowSide);
+float outA = clamp(halo * 0.6, 0.0, 1.0);
+vec2 q = p / R;
+float r2 = min(dot(q, q), 1.0);
+float z = sqrt(1.0 - r2);
+vec3 N = vec3(q, z);
+vec3 src = vec3(-L * 0.42 + vec2(0.0, 0.1), 0.2);
+vec3 toS = N * 0.92 - src;
+float scatter = 1.0 / (1.0 + dot(toS, toS) * 7.0);
+vec2 f = lightField(N * 0.55, time * mix(0.25, 1.75, 0.5000) * 0.6, ready);
+float density = 0.86 + 0.14 * exp(-abs(f.x) * 0.8);
+vec3 glowCol = mix(blue, iris, 0.55 * smoothstep(0.55, 1.35, length(toS)));
+vec3 inner = glowCol * scatter * density * glowGain;
+inner += frost * scatter * scatter * 0.55 * glowGain;
+vec3 Ld = normalize(vec3(L * 0.7, 0.7));
+float lambert = max(dot(N, Ld), 0.0);
+vec3 col = vec3(0.04, 0.05, 0.085) * (0.6 + 0.4 * z);
+col += vec3(0.11, 0.14, 0.21) * lambert * 0.32;
+col += inner * (0.5 + 0.5 * z);
+float crossA = clamp(0.5 - crossD / aaC, 0.0, 1.0) * 1.0000;
+float crossSh = clamp(0.5 - crossS / aaC, 0.0, 1.0) * 1.0000 * (1.0 - crossA);
+float crossHi = clamp(0.5 - crossH / aaC, 0.0, 1.0) * 1.0000 * (1.0 - crossA);
+col *= 1.0 - 0.35 * crossSh;
+col += frost * 0.04 * crossHi;
+col = mix(col, frost * 0.8, crossA * 0.5);
+col += (randFibo(floor(shapeSample.localPosition) + 0.37) - 0.5) * mix(0.0, 0.06, 0.5000);col = clamp(col + deband(), 0.0, 1.0);
+float discA = clamp(0.5 - sd / aa, 0.0, 1.0);
+vec4 res = vec4(col * discA, discA) + vec4(outC, outA) * (1.0 - discA);
+return res * 1.0000;
+}vec4 sampleShape(vec2 canvasUV) {
+vec2 canvasPosPx = vec2(canvasUV.x * uArtboardResolution.x, (1.0 - canvasUV.y) * uArtboardResolution.y);float absWidth = 160.0000;
+float absHeight = 160.0000;
+vec2 elementSizePx = vec2(absWidth, absHeight);
+vec2 elementPosPx = vec2(0.1417, 230.0000) * uArtboardResolution - getAnchorOffsets() * elementSizePx;float dist = sdShape(canvasPosPx, elementPosPx, elementSizePx, 0.0000);
+float aa = max(length(vec2(dFdx(dist), dFdy(dist))), 0.75);
+float uvGrad = max(length(dFdx(canvasUV)), length(dFdy(canvasUV)));
+float seamFactor = smoothstep(0.01, 0.03, uvGrad);
+aa = mix(aa, 0.75, seamFactor);float fillAlpha = 1.0 - smoothstep(mix(0.0, -150., 0.0000), mix(aa, 150., 0.0000), dist);
+fillAlpha = mix(fillAlpha, step(dist, 0.0), seamFactor);
+vec2 localPos;
+localPos = rotate2D(canvasPosPx - (elementPosPx + elementSizePx * 0.5), 0.0000 * -TAU) + elementSizePx * 0.5;
+vec2 localSize;
+localSize = elementSizePx;vec2 centerPx;
+centerPx = elementPosPx + elementSizePx * 0.5;
+float centerDist = sdShape(centerPx, elementPosPx, elementSizePx, 0.0000);
+float maxInset = max(-centerDist, 0.00001);vec3 fillRgb = getFillColor(localPos, localSize, dist, maxInset);vec2 mouseCanvasPosPx = vec2(uMousePos.x, 1.0 - uMousePos.y) * uArtboardResolution;
+vec2 mousePosition = localPos + rotate2D(mouseCanvasPosPx - canvasPosPx, 0.0000 * -TAU);
+vec4 fill = shadeShape(ShapeSample(-dist, fillAlpha, localPos, localSize, fillRgb, mousePosition));float strokeAlpha = 0.0;
+vec4 stroke = vec4(vec3(0, 0, 0) * strokeAlpha, strokeAlpha);
+vec4 col = stroke + fill * (1.0 - stroke.a);
+return col;
+}vec4 getNormalOutput(vec4 color, vec4 background) {
+return mix(background, color + background * (1.0 - color.a), 1.0000);
+}vec4 getOutputByMode(vec4 color, vec4 background) {
+return getNormalOutput(color, background);
+}vec4 getCompositeOutput(vec2 uv) {
+vec4 background = vec4(0.0);background = texture(uBgTexture, vTextureCoord);vec4 color = sampleShape(uv);return getOutputByMode(color, background);
+}void main() {
+vec2 uv = vTextureCoord;
+vec2 pos = (uMousePos - 0.5) * 0.0000;uv -= pos;fragColor = getCompositeOutput(uv);
+}
