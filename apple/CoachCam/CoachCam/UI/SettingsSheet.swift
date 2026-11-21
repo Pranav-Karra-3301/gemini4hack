@@ -1,7 +1,8 @@
+import CoachAPI
 import CoachUI
 import SwiftUI
 
-/// Coach, voice, Photos. Deliberately small: the camera is the app.
+/// Coach, camera, about. Deliberately small: the camera is the app.
 struct SettingsSheet: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -11,31 +12,38 @@ struct SettingsSheet: View {
         NavigationStack {
             Form {
                 Section {
-                    Toggle("Live coaching", isOn: Binding(
+                    Toggle("Coach", isOn: Binding(
                         get: { app.coachEnabled },
                         set: { on in
                             app.coachEnabled = on
                             if on { Task { await app.startCoachIfReady() } } else { app.coach.stop() }
                         }))
                     Toggle("Gemini voice", isOn: $app.voiceOn)
-                    Toggle("Live depth", isOn: $app.liveDepth)
-                    if let ms = app.coach.connectMs {
-                        LabeledContent("Connect time", value: "\(ms) ms")
-                    }
+                        .disabled(!app.coachEnabled)
                 } header: {
-                    Text("Heliocam")
+                    Text("Coach")
                 } footer: {
-                    Text("With the voice off the mic and Gemini's voice are muted; it still watches, guides with the border, shows tips as a yellow tag and moves the dials.")
+                    Text("Voice off: the coach still guides with the border and the dials.")
                 }
                 Section {
+                    Toggle("Live depth", isOn: $app.liveDepth)
                     Toggle("Save to Photos", isOn: $app.saveToPhotos)
-                    LabeledContent("Shots on this phone", value: "\(app.shots.shots.count)")
                 } header: {
-                    Text("Shots")
+                    Text("Camera")
                 } footer: {
-                    Text("Every shot stays in Heliocam on this phone; Save to Photos also adds it to your library.")
+                    Text("\(app.shots.shots.count) shots on this phone.")
+                }
+                Section {
+                } header: {
+                    Text("About")
+                } footer: {
+                    Text("Coach: gemini-3.8-live. Edits: \(GeminiDirect.strongModel), \(GeminiDirect.fastModel). Voice: \(GeminiDirect.ttsModel).")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Color(red: 0.035, green: 0.035, blue: 0.04))
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -43,7 +51,8 @@ struct SettingsSheet: View {
             }
         }
         .presentationDetents([.medium, .large])
+        .presentationBackground(Color(red: 0.035, green: 0.035, blue: 0.04))
+        .preferredColorScheme(.dark)
         .tint(CoachColor.safelight)
     }
-
 }

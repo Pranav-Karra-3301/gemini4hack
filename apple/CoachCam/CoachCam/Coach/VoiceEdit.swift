@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Observation
+import os
 import Speech
 
 /// Hold the shot viewer's mic and say what to change ("warmer", "brighter face"). On release the
@@ -10,6 +11,7 @@ import Speech
 @MainActor
 @Observable
 final class VoiceEdit {
+    private static let log = Logger(subsystem: "app.heliocam.CoachCam", category: "Voice")
     /// The mic is open (the key glows from inside while true).
     private(set) var isListening = false
     /// Input level 0…1 while listening.
@@ -40,7 +42,7 @@ final class VoiceEdit {
             do {
                 try start()
             } catch {
-                print("CoachCam[voice] mic failed: \(error.localizedDescription)")
+                Self.log.error("Mic failed: \(error.localizedDescription, privacy: .public)")
                 teardown()
             }
         }
