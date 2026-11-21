@@ -249,7 +249,7 @@ private struct GuideGlow: View {
             case .medium: k = 0.8
             case .large: k = 1
             }
-            return (Self.cue(g, tilt: tilt.angle), k)
+            return (Self.cue(g, tilt: tilt.angle), k * SubjectTracker.shared.glowScale)
         }
         return (.hold, 1)
     }
