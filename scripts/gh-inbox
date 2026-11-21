@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# gh-inbox: show new GitHub comments addressed to this worktree's agent.
+#
+#   scripts/gh-inbox                print new pings since the last check, then mark them seen
+#   scripts/gh-inbox --watch [sec]  poll every sec seconds (default 60) and print one line per new ping
+#   scripts/gh-inbox --hook         same as the default, but prints a header and never fails
+#                                   (used by the Claude Code hooks in .claude/settings.json)
+#
+# In a worktree whose branch is <type>/<issue>-<desc>, a ping is a comment by someone else that is
+# on that issue, on the branch's PR, or names the branch. In the main checkout, a ping is any
+# comment that @mentions you.
+#
+# Your agents post under your GitHub account, and GitHub doesn't notify you about your own
+# comments, so this reads the repo's comments directly instead of using notifications.
+# Each worktree keeps its own state under its git dir, so checks never consume each other's pings.
+set -uo pipefail
+
+mode=once
+interval=60
+case "${1:-}" in
+  "" | --once) ;;
+  --watch) mode=watch; interval="${2:-60}" ;;
+  --hook) mode=hook ;;
+  -h | --help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  *) echo "usage: scripts/gh-inbox [--watch [seconds] | --hook]" >&2; exit 2 ;;
+esac
+
+if [[ $mode == hook ]]; then exec 2>/dev/null; fi
+cd "$(dirname "$0")" || exit 0
+
+git_dir=$(git rev-parse --absolute-git-dir) || exit 0
+branch=$(git branch --show-current)
+issue=$(sed -nE 's#^[a-z]+/([0-9]+)-.*#\1#p' <<<"$branch")
+state="$git_dir/gh-inbox"
+mkdir -p "$state" && touch "$state/seen"
+
+if [[ -s $state/login ]]; then
+  me=$(<"$state/login")
+else
+  me=$(gh api user --jq .login) || exit 0
+  echo "$me" >"$state/login"
+fi
+
+# Strip a comment down to one tab-separated line: id, updated_at, issue/PR number, author, url, body.
+row='[.id, .updated_at, (URL | split("/") | last), .user.login, .html_url,
+      (.body | gsub("[\\t\\r\\n]+"; " "))] | @tsv'
+
+check() {
+  local since pr newest="" id upd num user url body tag key
+  if [[ -s $state/since ]]; then
+    since=$(<"$state/since")
+  else
+    since=$(date -u -v-1d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)
+  fi
+  pr=$(cat "$state/pr" 2>/dev/null)
+  if [[ -n $issue && -z $pr ]]; then
+    pr=$(gh pr view "$branch" --json number --jq .number 2>/dev/null) && echo "$pr" >"$state/pr"
+  fi
+
+  local q="since=$since&sort=updated&direction=asc&per_page=100" rows
+  rows=$(
+    gh api --paginate "repos/{owner}/{repo}/issues/comments?$q" --jq ".[] | ${row//URL/.issue_url}" &&
+      gh api --paginate "repos/{owner}/{repo}/pulls/comments?$q" --jq ".[] | ${row//URL/.pull_request_url}"
+  ) || return 1
+
+  shopt -s nocasematch
+  while IFS=$'\t' read -r id upd num user url body; do
+    [[ -z $id ]] && continue
+    [[ $upd > $newest ]] && newest=$upd
+    key="$id:$upd"
+    grep -qxF "$key" "$state/seen" && continue
+    echo "$key" >>"$state/seen"
+
+    if [[ -n $issue ]]; then
+      tag="${body%%]*}]"                                  # "[claude · feat/12-x]"
+      [[ $body == "["* && $tag == *" $branch]" ]] && continue   # written by this agent
+      [[ $num == "$issue" || $num == "$pr" || $body == *"$branch"* ]] || continue
+    else
+      [[ $body =~ (^|[^A-Za-z0-9-])@$me([^A-Za-z0-9-]|$) ]] || continue
+    fi
+    ((${#body} > 280)) && body="${body:0:280}…"
+    printf '#%s %s: %s  %s\n' "$num" "$user" "$body" "$url"
+  done <<<"$rows"
+  shopt -u nocasematch
+
+  [[ -n $newest ]] && echo "$newest" >"$state/since"
+  tail -n 500 "$state/seen" >"$state/seen.tmp" && mv "$state/seen.tmp" "$state/seen"
+}
+
+case $mode in
+  once) check ;;
+  hook)
+    out=$(check) || exit 0
+    if [[ -n $out ]]; then
+      echo "New GitHub comments for ${branch:-this checkout} (scripts/gh-inbox). Deal with these before continuing:"
+      echo "$out"
+    fi
+    exit 0
+    ;;
+  watch)
+    while true; do
+      check || true
+      sleep "$interval"
+    done
+    ;;
+esac
