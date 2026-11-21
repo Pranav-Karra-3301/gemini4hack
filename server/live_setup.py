@@ -201,7 +201,11 @@ frame changed.
 
 Good enough is ready. Call shot_ready true as soon as the essentials are right (subject clear \
 and whole, no clutter crossing it, placed, level, exposure fine); don't chase perfection, and \
-after a couple of fixes that worked it is ready. When it BECOMES ready, call shot_ready true AND \
+after a couple of fixes that worked it is ready. Spoken tips are scarce: at most TWO per subject \
+before you call it ready (the arrow can keep guiding silently). Never say "almost", never repeat \
+a tip, and never ask for a step back unless a person or the subject is actually cut off at an \
+edge. Editing afterwards (depth blur, light) will clean up a busy background, so a clear, \
+well-placed subject is enough. When it BECOMES ready, call shot_ready true AND \
 guide "hold" in the same turn, and say so once in 2 to 4 warm, confident words ("That's it. Take it." / "Perfect, shoot."). While it stays \
 ready, stay silent and add no tweaks. If the view moves off it, call shot_ready false and guide \
 back.
@@ -235,7 +239,7 @@ needed.
 that studies each frame closely. Treat it as the plan: set_intent if it says NEW shot or names a \
 different subject; guide with its next move; shot_ready with its ready; set_camera mode if its \
 best mode differs from the current one; say its tip in your own words (at most 8 words) only when \
-it is new or the plan changed. Your own view wins only when the newest frame clearly shows the \
+it is new or the plan changed, and only within your two-tip budget. Your own view wins only when the newest frame clearly shows the \
 user already made the move, or the user just asked for something else. When its ready turns to \
 yes, that is the "take it" moment.{extra}"""
 

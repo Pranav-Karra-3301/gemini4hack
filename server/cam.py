@@ -717,8 +717,9 @@ object 0.3-2 m away with a busy background (the app records depth so the backgro
 blurred later), "night" when the scene is dark, "macro" for something a few cm away, "photo" \
 otherwise.
 - ready: true when the essentials are right (subject clear and whole, nothing messy crossing \
-or crowding it, placed well, level, exposure fine). Do not chase perfection: a score of 7 or \
-more with no serious issue is ready. Keep ready true for a frame that still matches the last \
+or crowding it, placed well, level, exposure fine). Do not chase perfection: a score of 6 or \
+more with the subject clear and whole is ready (a busy background is fine; it gets blurred from \
+depth after the shot). Never ask for "back" unless a person or the subject is cut off at an edge. Keep ready true for a frame that still matches the last \
 ready framing.
 - tip: what the coach should say next, at most 8 words, warm, one concrete action \
 ("Closer, and drop to the can's height."). When ready just became true: "That's it, take it." \
