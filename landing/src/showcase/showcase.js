@@ -34,8 +34,8 @@ const STAGES = [
   },
   {
     eyebrow: 'Edit for Me',
-    title: 'Gemini lights it by distance',
-    line: 'It picks layers by how far they are: the faces at 2.5 m lift, the warm light stays, the sea settles.',
+    title: 'Gemini plays the faders',
+    line: 'Gemini 4 looks at the shot and moves the faders one at a time. The light follows the depth: the faces at 2.5 m lift, the sea settles.',
     label: 'The 3D scene relit by distance: the people brighter, the light warmer, the background dimmer.',
   },
 ];
