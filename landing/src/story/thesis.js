@@ -1,22 +1,26 @@
-// The thesis under the hero: "Image analysis describes a picture. Heliocam takes one."
+// The thesis: "Image analysis describes a picture. Heliocam takes one."
 // A warm light rises behind the second sentence; below it, a comparison where a light
-// sweeps left to right on scroll entry and settles on the Heliocam column.
+// sweeps left to right and settles on the Heliocam column.
+// `{ hero: true }` makes it the page's hero: an h1, a full-viewport sunrise behind it with
+// slow rays, and `sub` (one line on what the product is) under the title.
 import { THESIS } from '../config.js';
 import { h, deco, reducedMotion } from './util.js';
 import './story.css';
 
-export function mountThesis(el) {
+export function mountThesis(el, { hero = false, sub = '' } = {}) {
   const { line, rows, labels } = THESIS;
   const reduced = reducedMotion();
 
-  const root = h('div', 'st-thesis');
+  const root = h('div', hero ? 'st-thesis st-thesis--hero' : 'st-thesis');
   if (reduced) root.classList.add('is-static');
   const inner = h('div', 'container');
+  if (hero) root.append(deco(h('div', 'st-hero__sky')));
 
   // Every sentence but the last is the muted "before"; the last one is lit.
-  const title = h('h2', 'st-thesis__line');
+  const title = h(hero ? 'h1' : 'h2', 'st-thesis__line');
   line.slice(0, -1).forEach((s) => title.append(h('span', 'st-thesis__a', s), ' '));
   const lit = h('span', 'st-thesis__b');
+  if (hero) lit.append(deco(h('span', 'st-hero__rays')), deco(h('span', 'st-hero__core')), deco(h('span', 'st-hero__ground')));
   lit.append(deco(h('span', 'st-thesis__sun')), deco(h('span', 'st-thesis__horizon')), h('span', 'st-thesis__b-text', line.at(-1)));
   title.append(lit);
 
@@ -55,7 +59,9 @@ export function mountThesis(el) {
     return rEl;
   });
 
-  inner.append(title, cmp);
+  inner.append(title);
+  if (sub) inner.append(h('p', 'st-thesis__sub', sub));
+  inner.append(cmp);
   root.append(inner);
   el.append(root);
 
@@ -67,7 +73,7 @@ export function mountThesis(el) {
 
   let io = null;
   if (reduced) {
-    for (const t of [title, cmp, ...rowEls]) t.classList.add('is-lit');
+    for (const t of [root, title, cmp, ...rowEls]) t.classList.add('is-lit');
   } else {
     io = new IntersectionObserver(
       (entries) => {
@@ -81,6 +87,8 @@ export function mountThesis(el) {
       { rootMargin: '0px 0px -18% 0px', threshold: 0.3 },
     );
     // Desktop lights the table at once; mobile (rows stacked) lights each row as it arrives.
+    // As the hero, the sunrise starts on load.
+    if (hero) requestAnimationFrame(() => root.classList.add('is-lit'));
     for (const t of [title, cmp, ...rowEls]) io.observe(t);
   }
 

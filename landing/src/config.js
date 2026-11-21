@@ -25,8 +25,7 @@ export const PHONE = {
   viewport: { w: 393, h: 852 },
 };
 
-// The thesis right under the hero. The hackathon bars image analysis apps; this is why
-// Heliocam isn't one.
+// The hero: the thesis. The hackathon bars image analysis apps; this is why Heliocam isn't one.
 export const THESIS = {
   line: ['Image analysis describes a picture.', 'Heliocam takes one.'],
   rows: [
@@ -41,7 +40,6 @@ export const THESIS = {
 // `media` alternates sides; text always shares one left edge.
 export const CHAPTERS = [
   { id: 'top', kind: 'hero' },
-  { id: 'thesis', kind: 'thesis' },
   {
     // src/lidar/ mountLidar(el, copy): a real scene as points, settling into the photo.
     id: 'lidar',

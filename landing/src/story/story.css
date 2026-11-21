@@ -116,6 +116,121 @@
   transform: none;
 }
 
+/* ---- the thesis as the page's hero: a sunrise behind "Heliocam takes one." ---- */
+
+.st-thesis--hero {
+  min-height: 100vh;
+  min-height: 100svh;
+  display: grid;
+  align-items: center;
+  padding-block: clamp(112px, 15vh, 150px) clamp(72px, 10vh, 112px);
+}
+.st-thesis--hero > .container { position: relative; z-index: 1; width: 100%; }
+/* Night sky that warms toward the horizon once the sun is up. */
+.st-hero__sky {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(130% 75% at 50% 34%, #16224f 0%, #0b1030 40%, #05060b 80%);
+  opacity: 0.4;
+  transition: opacity 3s var(--ease-out);
+}
+.st-thesis--hero.is-lit .st-hero__sky { opacity: 1; }
+.st-thesis--hero .st-thesis__line { font-weight: 680; }
+.st-thesis--hero .st-thesis__a {
+  font-size: clamp(24px, 3vw, 44px);
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+}
+.st-thesis--hero .st-thesis__b {
+  margin-top: 0.22em;
+  font-size: clamp(52px, 8vw, 124px);
+  letter-spacing: -0.045em;
+}
+.st-thesis--hero .st-thesis__sun {
+  width: 230%;
+  aspect-ratio: 2.4;
+  filter: blur(24px);
+  background: radial-gradient(
+    closest-side,
+    rgba(var(--sun-core-rgb), 0.5),
+    rgba(var(--sun-warm-rgb), 0.26) 30%,
+    rgba(var(--sun-ember-rgb), 0.09) 60%,
+    rgba(var(--sun-ember-rgb), 0) 100%
+  );
+}
+/* The sun itself: a bright core just breaking the horizon, behind the middle of the line. */
+.st-hero__core {
+  position: absolute;
+  z-index: 0;
+  left: 50%;
+  bottom: 0.02em;
+  width: 1.9em;
+  aspect-ratio: 2;
+  border-radius: 999px 999px 0 0;
+  pointer-events: none;
+  background: radial-gradient(60% 120% at 50% 100%, #fff4e0 0%, rgba(var(--sun-warm-rgb), 0.85) 34%, rgba(var(--sun-ember-rgb), 0.25) 68%, rgba(var(--sun-ember-rgb), 0) 100%);
+  filter: blur(8px);
+  opacity: 0;
+  transform: translate(-50%, 40%) scale(0.7);
+  transition: opacity 2.4s var(--ease-out) 0.4s, transform 3.2s var(--ease-out) 0.4s;
+}
+/* Slow rays fanning up from the horizon; two periods so they never look mechanical. */
+.st-hero__rays {
+  position: absolute;
+  z-index: 0;
+  left: 50%;
+  bottom: 0.02em;
+  width: 340%;
+  aspect-ratio: 2;
+  pointer-events: none;
+  transform-origin: 50% 100%;
+  background:
+    repeating-conic-gradient(from -90deg at 50% 100%, rgba(var(--sun-warm-rgb), 0) 0deg, rgba(var(--sun-warm-rgb), 0.24) 1.4deg, rgba(var(--sun-warm-rgb), 0) 3deg, rgba(var(--sun-warm-rgb), 0) 7.3deg),
+    repeating-conic-gradient(from -86deg at 50% 100%, rgba(var(--sun-core-rgb), 0) 0deg, rgba(var(--sun-core-rgb), 0.14) 0.8deg, rgba(var(--sun-core-rgb), 0) 1.9deg, rgba(var(--sun-core-rgb), 0) 11.1deg);
+  -webkit-mask-image: radial-gradient(closest-side at 50% 100%, #000 4%, rgba(0, 0, 0, 0.62) 38%, rgba(0, 0, 0, 0.18) 72%, transparent 100%);
+  mask-image: radial-gradient(closest-side at 50% 100%, #000 4%, rgba(0, 0, 0, 0.62) 38%, rgba(0, 0, 0, 0.18) 72%, transparent 100%);
+  filter: blur(0.8px);
+  opacity: 0;
+  transform: translateX(-50%) rotate(-2deg);
+  transition: opacity 3.4s var(--ease-out) 0.9s;
+  animation: st-rays 28s ease-in-out infinite alternate;
+}
+@keyframes st-rays {
+  from { transform: translateX(-50%) rotate(-2.2deg); }
+  to { transform: translateX(-50%) rotate(2.2deg); }
+}
+.st-thesis--hero .st-thesis__line.is-lit .st-hero__core { opacity: 1; transform: translate(-50%, 18%) scale(1); }
+.st-thesis--hero .st-thesis__line.is-lit .st-hero__rays { opacity: 1; }
+/* The ground: below the horizon line the night stays dark, so the sun rises over it and the
+   copy underneath sits on calm ink. */
+.st-hero__ground {
+  position: absolute;
+  z-index: 0;
+  top: calc(100% - 0.02em);
+  left: 50%;
+  width: 100vw;
+  height: 120vh;
+  pointer-events: none;
+  transform: translateX(-50%);
+  background:
+    radial-gradient(40% 6% at 50% 0%, rgba(var(--sun-warm-rgb), 0.22), rgba(var(--sun-warm-rgb), 0) 100%),
+    linear-gradient(to bottom, rgba(5, 6, 11, 0.5) 0, rgba(5, 6, 11, 0.86) 14%, #05060b 46%);
+}
+.st-thesis--hero .st-thesis__sub,
+.st-thesis--hero .st-cmp { position: relative; z-index: 1; }
+.st-thesis__sub {
+  max-width: 44ch;
+  margin: clamp(28px, 4vh, 40px) auto 0;
+  text-align: center;
+  font-size: var(--t-lede);
+  line-height: 1.5;
+  color: var(--muted);
+  text-wrap: balance;
+}
+.st-thesis--hero .st-cmp { margin-top: clamp(48px, 8vh, 88px); }
+
 /* ---- the comparison ---- */
 
 .st-cmp {

@@ -66,22 +66,16 @@ function sectionMarkup(ch) {
   const side = `media-${ch.media || 'right'}`;
   switch (ch.kind) {
     case 'hero':
+      // The thesis is the hero (src/story/thesis.js, hero mode); the bar names the product.
       return `
-      <section class="section hero" id="${ch.id}">
-        <div class="hero__stage" aria-hidden="true"></div>
-        <div class="hero__scrim" aria-hidden="true"></div>
-        <div class="container grid hero__grid">
-          <div class="col-text hero__copy rv-group">
-            <h1 class="display">${PRODUCT.name}</h1>
-            <p class="lede hero__lede">${PRODUCT.line}</p>
-            <p class="hero__sub">${PRODUCT.sub}</p>
-            <ul class="hero__badges" aria-label="Runs on">${PRODUCT.badges.map((b) => `<li>${b}</li>`).join('')}</ul>
-          </div>
-        </div>
-        <a class="hero__cue" href="#thesis" aria-label="Scroll down"><i></i></a>
+      <section class="hero" id="${ch.id}">
+        <header class="container hero__bar">
+          <a class="hero__brand" href="#${ch.id}"><img src="/assets/ios-AppIcon-1024.png" alt="" width="30" height="30" decoding="async" />${PRODUCT.name}</a>
+          <ul class="hero__badges" aria-label="Runs on">${PRODUCT.badges.map((b) => `<li>${b}</li>`).join('')}</ul>
+        </header>
+        <div class="hero__thesis"></div>
+        <a class="hero__cue" href="#lidar" aria-label="Scroll down"><i></i></a>
       </section>`;
-    case 'thesis':
-      return `<section class="thesis-host" id="${ch.id}"></section>`;
     case 'lidar':
       return `<section class="lidar-host" id="${ch.id}" aria-label="${ch.copy.title}"></section>`;
     case 'coach':
@@ -206,11 +200,9 @@ const plainSection = (inner) => (el) => {
   el.innerHTML = `<div class="container grid"><div class="col-text copy rv-group">${inner}</div></div>`;
 };
 
-// Hero: mount right away; it is the first thing on screen.
-mountModule($('.hero__stage'), 'hero', 'mountHero');
-
-whenNear(byId('thesis'), () => {
-  mountModule(byId('thesis'), 'story', 'mountThesis', [], plainSection(`<h2 class="h2">${THESIS.line.join(' ')}</h2>`));
+// Hero: the thesis, mounted right away; it is the first thing on screen.
+mountModule($('.hero__thesis'), 'story', 'mountThesis', [{ hero: true, sub: PRODUCT.sub }], (el) => {
+  el.innerHTML = `<div class="container hero__plain"><h1 class="h2">${THESIS.line.join(' ')}</h1><p class="lede">${PRODUCT.sub}</p></div>`;
 });
 
 whenNear(byId('lidar'), () => {
@@ -348,7 +340,7 @@ const revealer = new IntersectionObserver(
   { threshold: 0.12, rootMargin: '0px 0px -6% 0px' },
 );
 function revealGroup(g) {
-  g.querySelectorAll('.display, .eyebrow, .h2, .h3, .lede, .step, .hero__sub, .hero__badges').forEach((el, i) => {
+  g.querySelectorAll('.display, .eyebrow, .h2, .h3, .lede, .step').forEach((el, i) => {
     el.classList.add('rv');
     el.style.setProperty('--i', i);
   });
