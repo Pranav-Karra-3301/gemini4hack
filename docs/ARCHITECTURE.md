@@ -218,6 +218,10 @@ needs ≥ 4,096).
     proxy) and any request carrying `cf-connecting-ip` or `forwarded`, even from loopback, so the
     Cloudflare tunnel can't ride the loopback exemption. `x-forwarded-for` is only trusted from a
     loopback peer.
+  - A browser request whose `Origin` isn't localhost / loopback (another website open on the Mac,
+    or `Origin: null`) also loses the loopback exemption, so it can't read `/api/pair`'s token,
+    upload shots or open Live sessions on Core's key. CORS allows loopback origins only; the coach
+    pages are same-origin through Vite and don't need it.
   - Failures get 401 JSON, or WebSocket close 1008.
 - **The coach token** is `server/.coach_token` (32 hex chars, chmod 600, gitignored), created on the
   first LAN start, or env `COACH_TOKEN`. It is read on every request, so replacing the file rotates

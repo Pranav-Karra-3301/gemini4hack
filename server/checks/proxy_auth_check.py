@@ -5,6 +5,8 @@ Usage: cd server && uv run --no-sync python checks/proxy_auth_check.py
 The Vite dev proxy forwards with xfwd, so every /api request from it carries X-Forwarded-For and
 arrives from a loopback peer. Localhost through the proxy must pass without a token; a LAN client
 through the proxy, a spoofed X-Forwarded-For from a LAN peer, and tunnel requests need the token.
+A request from another website's page (a foreign Origin, issue #22) loses the loopback exemption
+too, so it can't read /api/pair or use Core without the token; pages on localhost keep it.
 Calls app.token_ok / app.is_local directly with a throwaway COACH_TOKEN; no server, no models.
 """
 
@@ -42,6 +44,17 @@ CASES = [
      "127.0.0.1", False, False),
     ("Forwarded header", {"forwarded": "for=127.0.0.1"}, {}, "127.0.0.1", False, False),
     ("xff with unknown peer", {"x-forwarded-for": "127.0.0.1"}, {}, None, False, False),
+    # Origin (issue #22): pages served from this Mac keep the exemption, other sites lose it
+    ("page on localhost:5320", {"origin": "http://localhost:5320"}, {}, "127.0.0.1", True, True),
+    ("page on 127.0.0.1 via vite", {"origin": "http://127.0.0.1:5320", "x-forwarded-for": "127.0.0.1"}, {},
+     "127.0.0.1", True, True),
+    ("page on [::1]", {"origin": "http://[::1]:5320"}, {}, "::1", True, True),
+    ("other website, loopback peer", {"origin": "https://evil.example"}, {}, "127.0.0.1", False, False),
+    ("other website via vite", {"origin": "https://evil.example", "x-forwarded-for": "127.0.0.1"}, {},
+     "127.0.0.1", False, False),
+    ("localhost lookalike", {"origin": "http://localhost.evil.example"}, {}, "127.0.0.1", False, False),
+    ("Origin: null (sandboxed iframe, file://)", {"origin": "null"}, {}, "127.0.0.1", False, False),
+    ("other website with the token", {"origin": "https://evil.example", **BEARER}, {}, "127.0.0.1", True, False),
 ]
 
 

@@ -28,8 +28,9 @@ Errors: non-2xx with JSON `{"error": "..."}`. Times are ISO 8601 UTC. All JSON i
   straight from loopback, or through the local Vite proxy (loopback peer, every
   `x-forwarded-for` hop loopback). A non-loopback peer, a LAN client through the Vite proxy
   (including the Mac's own browser on Vite's LAN address), or any request carrying
-  `cf-connecting-ip` or `forwarded` (the tunnel) must send it. Missing or wrong → 401 `{"error": ...}`, or WebSocket
-  close 1008.
+  `cf-connecting-ip` or `forwarded` (the tunnel) must send it, and so must a browser request
+  whose `Origin` isn't localhost / loopback (another website open on the Mac). Missing or wrong
+  → 401 `{"error": ...}`, or WebSocket close 1008. CORS allows loopback origins only.
 - `GET /api/pair` (loopback only; 403 otherwise, 409 if LAN mode is off, 503 if no token or LAN
   address yet): `{"host": "192.168.1.20", "port": 8787, "token": "...", "name": "Coach Core (<hostname>)",
   "url": "coach://pair?host=192.168.1.20&port=8787&token=..."}`. The Mac app shows `url` as a QR
