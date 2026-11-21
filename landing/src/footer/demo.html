@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Footer demo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,400..700&display=swap" rel="stylesheet" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #05060b;
+        color: #eef3ff;
+        font-family: 'Google Sans Flex', system-ui, sans-serif;
+      }
+      .prev {
+        height: 160vh;
+        display: grid;
+        place-items: center;
+      }
+      .prev p {
+        margin: 0;
+        font-size: clamp(40px, 4.6vw, 68px);
+        font-weight: 650;
+        letter-spacing: -0.03em;
+        color: rgba(238, 243, 255, 0.45);
+      }
+    </style>
+  </head>
+  <body>
+    <section class="prev"><p>Scroll down</p></section>
+    <footer id="footer"></footer>
+    <script type="module">
+      import { mountFooter } from './footer.js';
+      window.__footer = mountFooter(document.getElementById('footer'));
+    </script>
+  </body>
+</html>
