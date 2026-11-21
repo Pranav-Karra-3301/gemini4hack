@@ -19,8 +19,10 @@ struct ShotReveal: View {
 
     var body: some View {
         GeometryReader { geo in
-            let top = max(geo.safeAreaInsets.top, 12)
-            let bottom = max(geo.safeAreaInsets.bottom, 12) + 8
+            // This view ignores the safe area (the photo and background run edge to edge), so the
+            // proxy reports zero insets: take them from the window so the keys clear the Dynamic Island.
+            let top = max(geo.safeAreaInsets.top, ScreenInsets.top, 12)
+            let bottom = max(geo.safeAreaInsets.bottom, ScreenInsets.bottom, 12) + 8
             VStack(spacing: 0) {
                 GeometryReader { box in
                     let rect = Self.fit(model.photo?.size, in: box.size)
@@ -227,6 +229,9 @@ private struct ModeKeys: View {
 /// them one after another, each lit from inside while it moves.
 private struct Faders: View {
     let model: RevealModel
+    /// The rows' height with no step caption; room for one caption is kept under them so the
+    /// photo doesn't jump when Gemini's "why" appears.
+    @State private var base: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 10) {
@@ -236,7 +241,56 @@ private struct Faders: View {
                 }
             }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { h in
+            if model.sliders.spotlight == nil { base = h }
+        }
+        .frame(minHeight: base > 0 ? base + Self.captionRoom : nil, alignment: .top)
+        .modifier(Thinking(active: model.working))
     }
+
+    static let captionRoom: CGFloat = 24
+}
+
+/// While Gemini works the faders breathe: a slow matte pulse with a faint blue sheen drifting
+/// across them. No spinner, no text.
+private struct Thinking: ViewModifier {
+    let active: Bool
+    @State private var t0 = Date()
+
+    func body(content: Content) -> some View {
+        TimelineView(.animation(paused: !active)) { ctx in
+            let t = ctx.date.timeIntervalSince(t0)
+            let breath = active ? 0.5 - 0.5 * cos(t * 2 * .pi / 1.8) : 0
+            let sweep = active ? (t / 2.2).truncatingRemainder(dividingBy: 1) : 0
+            content
+                .opacity(1 - 0.28 * breath)
+                .overlay {
+                    GeometryReader { g in
+                        LinearGradient(colors: [.clear, ShotReveal.geminiBlue.opacity(0.10), .clear],
+                                       startPoint: .leading, endPoint: .trailing)
+                            .frame(width: g.size.width * 0.5)
+                            .offset(x: (sweep * 1.5 - 0.5) * g.size.width)
+                    }
+                    .opacity(active ? 1 : 0)
+                    .blendMode(.plusLighter)
+                    .allowsHitTesting(false)
+                }
+        }
+        .animation(.easeInOut(duration: 0.4), value: active)
+        .onChange(of: active) { _, on in if on { t0 = Date() } }
+    }
+}
+
+/// The window's safe-area insets (Dynamic Island, home indicator), for views that ignore the
+/// safe area for a full-bleed background but must keep their keys clear of it.
+@MainActor
+enum ScreenInsets {
+    static var window: UIWindow? {
+        UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows).first { $0.isKeyWindow }
+    }
+    static var top: CGFloat { window?.safeAreaInsets.top ?? 0 }
+    static var bottom: CGFloat { window?.safeAreaInsets.bottom ?? 0 }
 }
 
 /// A thin matte line sweeping slowly top to bottom, with a faint trail above it.

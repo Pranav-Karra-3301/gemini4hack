@@ -81,7 +81,7 @@ public final class EditSlidersModel {
     }
 
     /// Starts a coach step without waiting: returns the applied value and when the glide lands.
-    func beginCoachStep(_ step: EditStep, index: Int?, of count: Int?, at now: Date) -> (Double?, Date) {
+    public func beginCoachStep(_ step: EditStep, index: Int?, of count: Int?, at now: Date) -> (Double?, Date) {
         let applied = startCoachGlide(step.slider, to: step.value, at: now)
         spotlight = Spotlight(slider: step.slider, why: step.why, region: step.region,
                               index: index, count: count, start: now)

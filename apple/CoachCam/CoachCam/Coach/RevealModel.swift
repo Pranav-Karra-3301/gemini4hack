@@ -5,6 +5,7 @@ import CoachUI
 import CoreImage
 import Foundation
 import ImageIO
+import os
 import UIKit
 
 /// The shot viewer: the photo, a depth sweep when the photo carries depth, then a few physical
@@ -44,6 +45,7 @@ final class RevealModel {
     @ObservationIgnored private var depth: CIImage?
     @ObservationIgnored private var editTask: Task<Void, Never>?
     @ObservationIgnored private var fastTask: Task<FastOutcome, Never>?
+    @ObservationIgnored private var voiceSerial = 0
     /// The faders before the last edit (for "undo" / a disappointed reaction).
     @ObservationIgnored private var lastEditBefore: [Slider: Double]?
     @ObservationIgnored private var lastEditAt = Date.distantPast
@@ -54,6 +56,10 @@ final class RevealModel {
 
     /// A small set of faders: light, then colour, then depth.
     static let faders: [Slider] = [.exposure, .contrast, .shadows, .warmth, .vibrance, .depthBlur]
+    /// Gemini's plan plays like a hand on a mixing desk: each fader glides (the `lift` spring,
+    /// ~0.7 s) and the next one starts this long before the previous one lands.
+    static let stepOverlap: TimeInterval = 0.25
+    private static let log = Logger(subsystem: "app.heliocam.CoachCam", category: "Edit")
     nonisolated static let previewSide = 1080
 
     // MARK: Lifecycle
@@ -180,6 +186,17 @@ final class RevealModel {
         let values = sliders.values
         let recent = lastEditBefore != nil && Date().timeIntervalSince(lastEditAt) < 30
         working = true
+        voiceSerial += 1
+        let vs = voiceSerial
+        // The transcript (`voiceEdit`) normally follows within ~1 s; if the hold was cancelled it
+        // never comes, so never leave the faders and Edit for Me waiting on it.
+        tasks.append(Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard let self, gen == self.generation, vs == self.voiceSerial, self.fastTask != nil else { return }
+            Self.log.notice("Voice edit: no transcript after release; unlocking")
+            self.fastTask = nil
+            self.working = false
+        })
         fastTask = Task { [weak self] in
             let jpeg = await Task.detached(priority: .userInitiated) { Self.smallJPEG(photo, side: 512) }.value
             guard let jpeg else { return .nothing }
@@ -188,13 +205,15 @@ final class RevealModel {
             let input = [GeminiDirect.decisionImage(jpeg), GeminiDirect.decisionAudio(wav),
                          GeminiDirect.decisionText("A photographer is editing this photo by voice. Faders now: \(state).")]
             let questions: [String: GeminiDirect.Choice] = ["edit": Self.editQuestion, "reaction": Self.reactionQuestion]
-            guard let d = try? await gemini.decide(input: input, questions: questions) else { return .nothing }
+            let d: GeminiDirect.Decision
+            do { d = try await gemini.decide(input: input, questions: questions) } catch {
+                Self.log.error("Decide failed: \(error.localizedDescription, privacy: .public)")
+                return .nothing
+            }
             guard let self, gen == self.generation, !Task.isCancelled else { return .nothing }
             let edit = d.top("edit") ?? ("none", 0)
             let reaction = d.top("reaction")
-            #if DEBUG
-            print("CoachCam[decide] \(d.milliseconds) ms edit=\(edit.option) \(edit.p) reaction=\(reaction?.option ?? "-")")
-            #endif
+            Self.log.debug("Decide \(d.milliseconds) ms edit=\(edit.option, privacy: .public) \(edit.p) reaction=\(reaction?.option ?? "-", privacy: .public)")
             if recent, edit.option == "undo" && edit.p > 0.4 || (reaction?.option == "disappointed" && (reaction?.p ?? 0) > 0.5 && edit.option == "none") {
                 self.undoLast()
                 return .undone
@@ -328,31 +347,45 @@ final class RevealModel {
         working = true
         editTask = Task { [weak self] in
             let jpeg = await Task.detached(priority: .userInitiated) { Self.smallJPEG(photo) }.value
-            guard let jpeg else { self?.working = false; return }
+            guard let jpeg else {
+                Self.log.error("Edit: couldn't encode the photo")
+                self?.working = false
+                self?.editTask = nil
+                return
+            }
             do {
                 let plan = try await GeminiEdit.plan(gemini: gemini, jpeg: jpeg, values: values,
                                                      sliders: Self.faders, request: request, model: model)
                 guard let self, gen == self.generation, !Task.isCancelled else { return }
-                #if DEBUG
-                print("CoachCam[edit] \(model) \(plan.milliseconds) ms: \(plan.steps.map { "\($0.slider.rawValue)=\($0.value ?? 0)" })")
-                #endif
+                Self.log.debug("Gemini edit \(model, privacy: .public) \(plan.milliseconds) ms: \(plan.steps.map { "\($0.slider.rawValue)=\($0.value ?? 0)" }, privacy: .public)")
                 self.working = false
-                if !plan.say.isEmpty { self.speaker?(plan.say) }
-                if !plan.steps.isEmpty { self.remember(values) }
-                for step in plan.steps {
-                    _ = await self.sliders.coachStep(EditStep(slider: step.slider, value: step.value),
-                                                     index: nil, of: nil)
-                    guard gen == self.generation, !Task.isCancelled else { return }
-                    self.fixSerial += 1
-                    try? await Task.sleep(for: .milliseconds(220))
+                if plan.steps.isEmpty {
+                    self.speaker?(plan.say.isEmpty ? "It already looks good to me" : plan.say)
+                    self.editTask = nil
+                    return
                 }
+                if !plan.say.isEmpty { self.speaker?(plan.say) }
+                self.remember(values)
+                var landing = Date()
+                for (i, step) in plan.steps.enumerated() {
+                    guard gen == self.generation, !Task.isCancelled else { return }
+                    let (_, lands) = self.sliders.beginCoachStep(step, index: i, of: plan.steps.count, at: Date())
+                    landing = max(landing, lands)
+                    self.fixSerial += 1
+                    let next = lands.addingTimeInterval(-Self.stepOverlap).timeIntervalSinceNow
+                    try? await Task.sleep(for: .seconds(max(0.3, next)))
+                }
+                let rest = landing.timeIntervalSinceNow
+                if rest > 0 { try? await Task.sleep(for: .seconds(rest)) }
             } catch {
                 guard let self, gen == self.generation else { return }
                 self.working = false
+                self.editTask = nil
                 if !(error is CancellationError) {
-                    print("CoachCam[edit] failed: \(error.localizedDescription)")
-                    self.speaker?("That edit didn't go through")
+                    Self.log.error("Gemini edit (\(model, privacy: .public)) failed: \(error.localizedDescription, privacy: .public)")
+                    self.speaker?("That didn't go through. Try again")
                 }
+                return
             }
             if let self, gen == self.generation { self.editTask = nil }
         }

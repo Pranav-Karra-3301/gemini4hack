@@ -25,19 +25,27 @@ struct Gallery: View {
             .tabViewStyle(.page(indexDisplayMode: .never))
             .ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                HStack {
-                    RoundKey(symbol: "xmark", label: "Close gallery") { app.showRoll = false }
-                    Spacer()
-                    RoundKey(symbol: "slider.horizontal.3", label: "Edit this shot") {
-                        if let shot = current(shots) { app.open(shot) }
+            // The gallery sits in an overlay of a view that ignores the safe area, so measure where
+            // the keys actually are and push them below the Dynamic Island either way.
+            GeometryReader { geo in
+                let frame = geo.frame(in: .global)
+                let screenHeight = ScreenInsets.window?.bounds.height ?? frame.maxY
+                let top = 8 + max(0, ScreenInsets.top - frame.minY)
+                let bottom = 14 + max(0, ScreenInsets.bottom - (screenHeight - frame.maxY))
+                VStack(spacing: 0) {
+                    HStack {
+                        RoundKey(symbol: "xmark", label: "Close gallery") { app.showRoll = false }
+                        Spacer()
+                        RoundKey(symbol: "slider.horizontal.3", label: "Edit this shot") {
+                            if let shot = current(shots) { app.open(shot) }
+                        }
                     }
+                    .padding(.horizontal, 18)
+                    .padding(.top, top)
+                    Spacer()
+                    Filmstrip(shots: shots, selection: $selection)
+                        .padding(.bottom, bottom)
                 }
-                .padding(.horizontal, 18)
-                .padding(.top, 8)
-                Spacer()
-                Filmstrip(shots: shots, selection: $selection)
-                    .padding(.bottom, 14)
             }
         }
         .onAppear { if selection == nil { selection = shots.first?.id } }
