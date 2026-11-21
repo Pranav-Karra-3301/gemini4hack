@@ -14,10 +14,10 @@ final class Speaker: NSObject {
     static let shared = Speaker()
 
     /// A warm, natural prebuilt Gemini voice.
-    static let geminiVoice = "Sulafat"
+    static let geminiVoice = "Umbriel"   // easy-going; Sulafat read as too bright/excited
     /// Style tag spoken lines get. Measured 2026-11-21: a "Say warmly: ..." preamble or director's
     /// notes are read aloud by these models; an inline bracket tag is not (line length unchanged).
-    private static let style = "[warm, calm, friendly]"
+    private static let style = "[relaxed, even, conversational, low energy]"
     /// The lines the coach says most, fetched when the coach starts.
     static let commonLines = [
         "That's it. Take it.", "Take a step back.", "Come a little closer.", "Switch to portrait.",
@@ -51,8 +51,22 @@ final class Speaker: NSObject {
     var isSpeaking: Bool { synth.isSpeaking || player?.isPlaying == true }
 
     /// Speaks `text`, cutting off whatever was still being said so the newest line wins.
+    /// Takes the hype out of a line: no exclamation marks, no stock cheer openers.
+    static func calm(_ text: String) -> String {
+        var t = text.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "!", with: ".")
+        let openers = ["great", "perfect", "awesome", "amazing", "wow", "nice", "excellent", "fantastic", "beautiful", "love it", "oh"]
+        for o in openers {
+            for sep in [". ", ", ", " - ", " "] where t.lowercased().hasPrefix(o + sep) && t.count > o.count + sep.count + 3 {
+                t = String(t.dropFirst(o.count + sep.count))
+                t = t.prefix(1).uppercased() + t.dropFirst()
+            }
+        }
+        while t.contains("..") { t = t.replacingOccurrences(of: "..", with: ".") }
+        return t
+    }
+
     func say(_ text: String) {
-        let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let line = Self.calm(text)
         guard !line.isEmpty else { return }
         configureSession()
         cutOff()
