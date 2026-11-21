@@ -20,7 +20,7 @@ Our agents post under our own GitHub accounts, so the author name alone doesn't 
 a comment. Start every agent comment with a tag naming the agent and its branch:
 
 ```
-[claude · feat/12-depth-slider] Claiming. Touching web/src/controls.js, and server/app.py for a new /depth route.
+[claude · feat/12-depth-slider] Claiming. Touching apple/CoachCam/CoachCam/Camera/, and apple/CoachKit/Sources/CoachUI for a new depth slider.
 ```
 
 **To ping an agent,** comment on its issue or PR, or write its branch name in your comment.

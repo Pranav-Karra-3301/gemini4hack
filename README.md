@@ -1,60 +1,96 @@
-# Coach
+<p align="center">
+  <img src="apple/CoachCam/CoachCam/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png" width="112" alt="Heliocam app icon">
+</p>
 
-A native iPhone camera whose Gemini Live coach turns the real manual dials while it talks, and a
-Mac app that runs the heavy models (Depth Pro, SAM 2.1, SHARP) through **Coach Core** and edits
-shots with sliders Gemini can drive and teach with.
+<h1 align="center">Heliocam</h1>
 
-- **Start here:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): components, data flows, latency
-  and cost budget, security, how to run everything, known gaps.
-- **Testing the Mac app on your own Mac:** [`docs/TEAMMATE_SETUP.md`](docs/TEAMMATE_SETUP.md).
-- API: [`docs/CORE_API.md`](docs/CORE_API.md). Gemini usage and cost: [`docs/BEST_PRACTICES.md`](docs/BEST_PRACTICES.md).
-- Apps: [`apple/CoachCam`](apple/CoachCam/README.md) (iPhone),
-  [`apple/CoachStudio`](apple/CoachStudio/README.md) (Mac), shared package `apple/CoachKit`.
-- Run: `./dev.sh` (this Mac), `./dev.sh lan` (pair an iPhone), `./phone.sh` (web camera over a tunnel).
+<p align="center">
+  <b>The iPhone camera that knows which dial to turn, and turns it.</b><br>
+  Gemini 4 watches the viewfinder, moves the real ISO, shutter, focus and white-balance controls,
+  tells you where to step, and says <i>"That's it, take it."</i> when the shot is right.
+</p>
 
-## Web demo: lighting coach
+<p align="center">
+  <a href="https://helio.pranavkarra.me/"><b>helio.pranavkarra.me</b></a>
+  · Built at the Gemini 4 NYC Hackathon (2026-11-21)
+</p>
 
-Upload a photo. It appears flat, as points. Click it and it goes black, then pushes out along Z
-from near to far as each depth arrives. The panel shows three coaching regions from Gemini 4
-Argon (click a note to dim everything outside its box) and lighting/composition scores with
-confidence, Decision-1 style.
+<table align="center">
+  <tr>
+    <td align="center"><img src="design/handoff/mocks/iphone/02-v2-a-watching.png" width="190" alt="Gemini watching the viewfinder"><br><sub>Watching the scene</sub></td>
+    <td align="center"><img src="design/handoff/mocks/iphone/03-v2-b-gemini-adjusting.png" width="190" alt="Gemini turning the ISO dial"><br><sub>Gemini turns a dial</sub></td>
+    <td align="center"><img src="design/handoff/mocks/iphone/04-v2-c-aligned.png" width="190" alt="Shot aligned and ready"><br><sub>Aligned: take it</sub></td>
+    <td align="center"><img src="design/handoff/mocks/iphone/05-v2-d-depth-scan.png" width="190" alt="Depth scan after capture"><br><sub>Depth scan</sub></td>
+  </tr>
+</table>
+<p align="center"><sub>Design mockups of the app's v2 "instruments" UI (<code>design/handoff/mocks/iphone/</code>).</sub></p>
 
-```sh
-./dev.sh          # API on :8787 + web on :5320 → open http://localhost:5320
+## What it does
+
+- **A camera agent, not a photo filter.** A Gemini 4 loop looks at the live frame and the camera's
+  state and calls tools: `set_camera` (ISO, shutter, EV, focus, white balance, zoom, torch),
+  `guide` (where to move), `set_intent`, `shot_ready` and `take_photo`. The dials on screen roll
+  when Gemini moves them, and a ghost target frame shows how far to move the phone.
+- **Fast decisions every second.** Next to the agent, `gemini-decision-1` answers the quick
+  questions about once a second: which way to move (the viewfinder's edge glows that way), whether
+  the shot is ready, and how the user reacted.
+- **It talks.** On-device speech recognition hears you; the coach answers with Gemini TTS.
+- **Depth on the phone.** Apple's Depth Pro 2 S runs on device through Core ML (LiDAR depth is the
+  fallback), so every shot has metric depth: a depth sweep after capture, depth blur, and a 3D view.
+- **Edit for Me.** Gemini 4 plans an edit and plays it as a sequence of moves on six faders you
+  can watch. Hold to talk: "make it warmer" maps to a fader move instantly.
+
+Everything runs on the iPhone. There's no server: the app calls the Gemini API directly.
+
+## Gemini models and their jobs
+
+| Model | Job |
+|---|---|
+| `gemini-4-hydrogen` | The live camera agent: function calling over the camera frame and state |
+| `gemini-decision-1` (Decisions API) | ~1 Hz `move` / `ready` / `reaction` calls; instant fader moves from voice |
+| `gemini-4-neon` | Edit for Me: plans the edit as fader moves |
+| `gemini-3.8-flash-tts` | The coach's voice |
+| Depth Pro 2 S (Core ML, on device) | Metric depth for every shot; LiDAR as fallback |
+
+```mermaid
+flowchart LR
+  CAM[Camera frames + state] --> AGENT[gemini-4-hydrogen agent loop]
+  CAM --> DEC[gemini-decision-1, ~1 Hz]
+  AGENT -->|set_camera / guide / take_photo| DIALS[Real camera controls + UI]
+  DEC -->|move / ready| DIALS
+  SHOT[Captured photo] --> DEPTH[Depth Pro 2 S on device]
+  SHOT --> EDIT[gemini-4-neon: Edit for Me]
+  DEPTH --> VIEW[Depth sweep, blur, 3D]
 ```
 
-Click a note to light only that object's points (from its mask); everything else goes dark.
-Points sit at `D0·(d/P02)^g` along their camera rays (metric log depth), so deep scenes get more
-relief; the footer's Depth slider sets `g` (saved), `?depth=` overrides it.
+## Run it
 
-`?mock=1` runs the UI with no backend (and `&fail=depth,regions,score,masks` to test error states).
-
-### Pieces
-
-| Piece | What runs | Typical time |
-|---|---|---|
-| Depth (`server/depth.py`) | Apple Depth Pro 2 S, local on the Mac GPU (`mps/fp16`), returns a 512-px float32 map | ~0.2–0.5 s |
-| Regions (`server/regions.py`) | `gemini-4-argon` via the Gemini API (OpenRouter fallback); boxes in Gemini's native `box_2d` 0–1000 format | 6–25 s, p50 9.5 s |
-| Masks (`server/segment.py`) | SAM 2.1-large (MPS, fp16) prompted with each Argon box, trimmed by depth; a scattered group mask also takes the box's near depth layer | ~0.5–1.3 s |
-| Scores (`server/decide.py`) | `gemini-decision-1` (Decisions API, both rubrics in one request), labels from `gemini-3.5-flash-lite`; OpenRouter emulation without a Gemini key | ~0.85 s |
-| Web (`web/`) | Vite + three.js `Points` with a custom shader: flat print, reveal from black, orbit, in-shader box dim/outline | — |
-
-API shapes are in `CONTRACT.md`. Keys live in `.env` (`GEMINI_API_KEY`, `OPENROUTER_API_KEY` for
-fallbacks), never in the browser or the apps. A page load costs about $0.007 (one Argon call plus scoring).
-
-Options (env): `REGIONS_MODEL`, `DECIDE_MODEL`, `DECIDE_LABEL_MODEL`, `DEPTH_PRECISION`, `DEPTH_DEVICE`.
-
-### Checks
+You need a Mac with Xcode, [XcodeGen](https://github.com/yonaskolb/XcodeGen), [uv](https://docs.astral.sh/uv/)
+and an iPhone (a LiDAR model gets the depth fallback).
 
 ```sh
-cd server
-uv run python checks/depth_check.py   ../web/public/samples/img-1216.jpg   # → out/depth_*.png
-uv run python checks/regions_check.py ../web/public/samples/img-1216.jpg   # → out/regions_*.jpg
-uv run python checks/decide_check.py  ../web/public/samples/img-1216.jpg
+# 1. Your Gemini API key (gitignored)
+echo 'GEMINI_API_KEY = <your key>' >> apple/Local.xcconfig
+
+# 2. The on-device depth model (51 MB, gitignored; the app falls back to LiDAR without it)
+uv run tools/depthpro2_coreml/fetch.py
+
+# 3. Generate the Xcode project and open it
+cd apple/CoachCam && xcodegen generate && open CoachCam.xcodeproj
 ```
 
-Sample photos in `web/public/samples/` are from the wayback project.
-Depth Pro 2 weights are under Apple's AMLR license (research use).
+Signing with a free Apple ID and running on your phone: [`apple/CoachCam/README.md`](apple/CoachCam/README.md).
+
+## Repo layout
+
+| Path | What |
+|---|---|
+| `apple/CoachCam/` | The iPhone app |
+| `apple/CoachKit/` | Shared Swift packages: models, Gemini clients, the live loop, the edit renderer, UI controls |
+| `tools/depthpro2_coreml/` | Fetches the Core ML Depth Pro 2 S model; PyTorch parity check |
+| `design/` | The design spec (`V2_INSTRUMENT.md`), handoff, mockups, icons and shaders |
+| `experiments/` | Film-look LUTs and earlier mask/review experiments |
+| `web/public/samples/` | Sample photos used by the Swift tests |
 
 ## Working in this repo
 
@@ -62,25 +98,5 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md) before you contribute. The rules are the
 agents: every task starts as a GitHub issue, all work happens in a worktree, and changes reach `main`
 only through squash-merged PRs.
 
-```sh
-gh repo clone Pranav-Karra-3301/gemini4hack
-cp .env.example .env    # then fill in the keys
-```
-
-Not in git: model weights (downloaded on first run), the SHARP `.spz` splats in `web/public/splats/`
-(made by SHARP from the wayback checkout, see `docs/ARCHITECTURE.md` §5), and the generated Xcode projects (run `xcodegen generate`).
-
-### Tests and checks
-
-Run the ones for the area you touched before you push, and all of them before you mark a PR ready.
-
-| What | Command | Needs |
-|---|---|---|
-| CoachKit unit tests | `cd apple/CoachKit && swift test` | Xcode 27.2. `sliderLogic()` is flaky (#21) |
-| Mac app builds | `cd apple/CoachStudio && xcodegen generate && xcodebuild -project CoachStudio.xcodeproj -scheme CoachStudio -derivedDataPath build CODE_SIGNING_ALLOWED=NO build` | Xcode, xcodegen |
-| iPhone app builds | `cd apple/CoachCam && xcodegen generate && xcodebuild -project CoachCam.xcodeproj -scheme CoachCam -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build` | Xcode, xcodegen |
-| Web demos build | `cd web && npm ci && npm run build` | Node |
-| Core starts | `cd server && uv sync && uv run --no-sync uvicorn app:app --port 8799`, then `curl localhost:8799/api/health` shows `"ok": true` | uv |
-| Core model checks | `server/checks/*.py`, see [Checks](#checks) | Models, `GEMINI_API_KEY` |
-
-No Xcode on your Mac? Ask on your PR for someone who has it to run the Swift rows, as on #13.
+Sample photos in `web/public/samples/` are from the wayback project. Depth Pro 2 weights are under
+Apple's AMLR license (research use).

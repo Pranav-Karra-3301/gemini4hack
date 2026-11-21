@@ -1,7 +1,7 @@
 # Coach v2 — "Instrument" direction (Gemini blue)
 
 Supersedes the v1 guidance UI (arrows, rings, intent chips, captions). Source of truth for Paper
-pages "v2 · Camera (iPhone)" and "v2 · Studio (Mac)" and the Unicorn phone demos.
+page "v2 · Camera (iPhone)" and the Unicorn phone demos.
 
 ## Principles (inspired by VWFNDR MBL and dial-style pro cameras; nothing copied)
 
@@ -73,20 +73,6 @@ point on the subject. Panel shows a single tilt ruler and the disc becomes a che
 **Opening (iPhone)**: void + the Unicorn key-light shader. Wordmark `coach` top-centre; the disc
 centred in the lower third as the only object (tap = start). Blue live dot. Nothing else.
 
-## Mac — CoachStudio (1440 × 900). No camera controls.
-
-- **Stage**: the selected shot, depth-enabled (subtle 3D tilt), max ~1000 × 680, centred-left.
-  Where Gemini is working, a soft blue relight region (depth-masked) and the one focus point.
-- **Slider column** (right, w 280, hairline rows): `EXPOSURE, CONTRAST, HIGHLIGHTS, SHADOWS, TEMP,
-  TINT`. Each: mono label, 20px numeral, a tick ruler with a thumb. The one Gemini is moving: blue
-  thumb + blue numeral; others at 45%.
-- **Filmstrip** (bottom): shots synced from the iPhone, 56px thumbs radius 10; the newest has a blue
-  dot. Top-left wordmark `coach studio`; top-right a blue dot + `IPHONE` mono 9px.
-- **Opening (Mac)**: light shader + the disc centred as an import/"+" target; wordmark; one mono
-  line `DROP A PHOTO` at 50%.
-
----
-
 ## v2.1 changes (user feedback, 2026-11-21) — these OVERRIDE anything above
 
 1. **Shutter orb, redone as a glass lens element** (the flat blue gradient ball is rejected).
@@ -108,7 +94,7 @@ centred in the lower third as the only object (tap = start). Blue live dot. Noth
    thin-film spectrum (`#7AA7FF → #B48CFF → #FF8FCF → #FFC27A → #8CF5D2 → #7AA7FF`, pastel, not
    neon) flowing around the border (~2.4 s per lap), falloff ~12px inward, ~70% at the edge. The
    numeral rolls like a drum and takes a faint iridescent tint. Glow fades out over 420ms when the
-   value settles. This replaces the "2px blue top bar". Same treatment on Mac slider rows.
+   value settles. This replaces the "2px blue top bar".
 4. **No arrows — the viewfinder border is the guide.** The viewfinder's own rounded border glows
    on the side you should tilt/move toward: inner edge glow in Gemini blue (hot `#B4CEFF` at the very
    edge, `#4C8DFF` falloff ~40px inward, slight bleed onto the bezel), intensity ∝ how far off you
@@ -123,46 +109,26 @@ centred in the lower third as the only object (tap = start). Blue live dot. Noth
 - Row 3 `y 728–852` (h 124): **red mic 60px** centred in the left third · **glass orb 104px** centred ·
   last-shot thumb 50px (radius 12) centred in the right third.
 
-### Mac
-- The slider row being changed gets the iridescent inner border glow (rule 3).
-- A red mic button (rule 2) sits bottom-right of the stage. The opening uses the glass orb (rule 1).
-
----
-
 ## v2.2 changes (user feedback, 2026-11-21) — OVERRIDE anything above
 
 1. **Mic is a wide capsule, not a circle.** Red glass capsule, radius full. iPhone 112 × 56 centred at
-   (65.5, 790) in Row 3's left third; Mac 140 × 56 bottom-right of the stage. Off: centred white mic
+   (65.5, 790) in Row 3's left third. Off: centred white mic
    glyph (22px), calm deep red. Listening: glyph slides to the left end, a live 9–12 bar waveform
    fills the rest of the capsule, bright red with a pulsing red inner border glow. Tap to toggle,
-   hold to talk. Mac shortcut: hold Space.
-2. **Mac opening = "the Pad"** (the orb-only opening is rejected). A frosted-acrylic light pad,
-   like an artist's light table, floating in the void in 3/4 perspective. It is lit from inside
-   (soft blue-white subsurface glow, brightest at the edges) and by the studio key light from the
-   upper right, with a soft contact shadow below. On it lie the 3–5 most recent shots from the
-   iPhone as thin prints, each slightly lifted in relief by its depth map. The newest print has just
-   arrived: a soft blue edge glow on that print is the one focal point. The cursor tilts the pad
-   gently (parallax). Dropping a photo anywhere on the pad imports it; hovering the pad brightens
-   its edge, and only then does a mono `DROP TO IMPORT` hint fade in. Persistent text is only the
-   wordmark (top-left) and a blue dot + `IPHONE` (top-right). No orb on Mac.
-3. **Editor 3D view ("Pad 3D").** In the Studio editor the stage can flip into 3D: the current shot
-   becomes a depth-relief plate resting on the pad, orbitable by dragging, with faint iso-depth
-   contour lines on the relief. Gemini's relight region glows on the relief itself. The slider
-   column stays, and the row being changed keeps the iridescent inner glow.
-
+   hold to talk.
 ## Craft rules (clean · textured · good UX)
 - **One light.** Every screen is lit by the same key light from the upper right, so highlights, rims
-  and shadows agree across iPhone, Mac and the shaders.
+  and shadows agree across the iPhone screens and the shaders.
 - **Three surfaces only**: void (`#04060C`), panel (`#070A14`), glass. One hairline weight (1px at
   12%). Radii: 30 (viewfinder), 16 (stage/prints), 12 (thumbs), full (capsules, orb).
 - **Texture is material, not decoration**: 2–3% animated film grain on every dark surface, frosted
   acrylic for the pad, smoked glass for the orb and mic, and a thin-film sheen only for changing values.
-- **One primary action per screen**: the orb (iPhone) and the pad (Mac). Everything else is secondary
+- **One primary action per screen**: the shutter. Everything else is secondary
   and quieter.
 - **State is shown with light, not words**: the edge glow shows direction, the inner glow shows a
   value changing, the blue edge on a print shows something new.
-- **Gemini is interruptible**: touching a glowing cell or slider takes control back. ⌘Z (Mac) or
-  shaking the phone undoes Gemini's last move. Gemini never changes two things at once.
+- **Gemini is interruptible**: touching a glowing cell or slider takes control back. Shaking the phone
+  undoes Gemini's last move. Gemini never changes two things at once.
 
 ---
 
@@ -216,36 +182,15 @@ centred in the lower third as the only object (tap = start). Blue live dot. Noth
    - 1100–1700ms: one blue edge-light sweep travels once around the viewfinder border (Gemini online),
      ending as the 6px live dot.
    - Then you're in the camera, ready to shoot.
-4. **Mac opening = "Latest shot, in depth"** (no orb, no pad):
-   - The newest synced iPhone shot fills the editor's stage frame (radius 16) as a slow depth-parallax
-     hero, revealed once by the same depth-scan sweep used on iPhone.
-   - The filmstrip of recent shots sits below; wordmark top-left, blue dot + `IPHONE` top-right.
-   - The whole window is a drop target: on drag-over, the stage dims and a 1px dashed frost frame with
-     `DROP TO IMPORT` appears.
-   - Clicking the stage or pressing ⏎ starts editing: the slider column slides in from the right.
-   - The opening is the editor without its sliders, so there's one layout and one focal point.
-5. **Editor 3D view (no pad):** the shot as a depth-relief plate floating over the void with a soft
-   contact shadow, faint iso-depth contours and Gemini's relight on the subject. Same slider column. A
-   small segmented toggle `2D | 3D` (mono 9px, hairline) sits top-right of the stage.
-6. **Studio · c "Shot arrives" = "Analyzing a new shot"** (no tilt, no empty space):
-   - Same layout as a (stage + slider column + filmstrip).
-   - The new thumbnail slides into the filmstrip's next slot (blue dot) and the shot takes the stage
-     flat, then the depth-scan sweep runs across it.
-   - Under the stage, three tiny mono steps light up in order: `DEPTH · SUBJECTS · LIGHT`, each with a
-     check when done.
-   - Slider rows are disarmed (ticks at 25%, values "—") until analysis finishes. Then the row Gemini
-     will change first gets the iridescent glow, which hands off to state a.
-
 ---
 
 ## Brand (2026-11-21, in progress)
 
-- Working names: family **Coach**; iPhone app **Coach Cam**; Mac app **Coach Studio** (matching
-  the native targets CoachCam / CoachStudio). Name alternatives are explored on the Paper page
+- Working names: family **Coach**; iPhone app **Coach Cam** (the native
+  target CoachCam). Name alternatives are explored on the Paper page
   "Brand · names, marks, app icons".
 - Mark idea, from the product's own UI language: a rounded viewfinder frame with ONE edge lit in
   Gemini blue (the coach telling you which way to go) and a small debossed "+" (the shutter / focus).
-  The Mac variant adds a depth contour or the iridescent thin-film sheen.
 - Same rules as the UI: matte, grain, one key light from the upper right, Gemini blue `#4C8DFF`
   as the single colour moment, iris only as a gradient tail. Don't use Google's Gemini sparkle or
   logo — only the colour.
@@ -259,31 +204,6 @@ fades only matter mid-scroll.
 
 ---
 
-## v3 Mac Studio — "Magic" (user, 2026-11-21): cleaner inputs, near-zero text, magical shaders, NOT vintage
-
-Rejected: the "v3 · Studio (Mac) · Pro" inspector layout (15 labelled sliders, histogram, lesson chips,
-transcript, text toolbar), plus tick rulers and engraved/brass looks in the product UI.
-
-- **The photo is the interface.** The stage fills the window (16px margins, radius 16). No inspector panel.
-- **Gemini teaches on the photo itself.** Each lesson step is shown as LIGHT where it acts. For example,
-  "subject light" is a soft, depth-aware light pool that blooms onto the faces, with a single floating
-  value chip (`+14 → +20`, Google Sans Flex 15px on a matte frosted chip) next to the subject. One
-  floating control at a time.
-- **Four controls, icons only**: a matte frosted pill dock bottom-centre with 4 icon buttons
-  (Light · Colour · Depth · Look) + the red mic capsule. Picking one turns the whole photo into the
-  input: drag horizontally anywhere to scrub, and the value appears near the cursor while you drag,
-  then fades. The active icon gets the iridescent inner glow. No labels at rest; a tooltip on hover.
-- **Lesson progress** = 4 small dots above the dock (the current one iridescent). Gemini speaks by voice;
-  at most ONE short line of text appears above the dots while it talks, then fades.
-- **Compare** = hold Space. A soft vertical band of light sweeps across the photo, revealing
-  before / after (shader wipe), not a hard divider line.
-- **Top bar**: back chevron and file name (13px, 60%) on the left. A 3-icon segmented switch
-  (Photo · Depth · 3D) in the centre. Export icon on the right. Nothing else.
-- **Filmstrip** hidden; it slides in from the left edge on hover or ⌘L.
-- **Shaders**: depth-aware relight pool (uses the depth map so light wraps around the near subject),
-  the iridescent glow on whatever is changing, the light-band compare wipe, the depth-scan sweep when a
-  shot arrives, and the depth parallax in 3D.
-
 ## Brand (2026-11-21): keep the Brand A *aesthetic*, new name, new icons
 - The user likes Brand A's celestial maximalist look: engraved star-chart linework, a sky gradient
   from deep navy to Gemini blue `#4C8DFF` to iris `#9A7CF6`, star-white, an iridescent thin-film halo
@@ -293,50 +213,4 @@ transcript, text toolbar), plus tick rulers and engraved/brass looks in the prod
 - Working name for the landing page: **Northlight**. North light is the soft, even light painters and
   photographers prize, and also the guiding star. It's a placeholder and easy to swap.
 - Icons: NO seals, badges or round emblems, and nothing vintage (no brass or old engraving plates).
-  Modern squircle and macOS-grid icons that carry the sky, linework and halo.
-
-### v3 Mac Studio — "Light Desk" (OVERRIDES the v3 "Magic" dock/top-bar bullets above)
-User: "an actual fader-looking UI… panels should show some depth or texture… I don't like the top
-bar layout, the little segmented buttons, the controls on the right… this is Lightroom but 10%
-better. It needs to be different."
-
-- **Window = photo + console.** No top bar (just the traffic lights over the void and a 13px file name
-  at 50% beside them), no segmented controls, no right inspector.
-- **Stage**: the photo, large, centred in the upper ~68% of the window, radius 16, floating over the
-  void with a soft contact shadow.
-- **The Light Desk** (the bottom ~30%, full width, 16px margins): a physical console slab of matte
-  bead-blasted dark anodised aluminium (`#12161F` → `#0C0F16`). It has fine grain, a soft top-edge
-  highlight made by light falloff (no specular), and recessed wells shown by inner shadows. Modern
-  hardware (Teenage Engineering / pro lighting desk), not vintage: no screws, brass or engraving.
-  - **6 motorized fader channels**: KEY (subject light), FILL (shadows), SKY (highlights), WARM
-    (temperature), DEPTH (background separation), GLOW (look strength). Each channel is a recessed slot
-    (~150px travel) with a soft-touch matte fader cap (a rounded rectangle with a centre groove), a thin
-    LED meter column beside it (blue segments, lit to the level), and an ICON scribble at the bottom
-    (sun, half-moon, cloud, thermometer, layers, halo). No text labels at rest.
-  - **Gemini moves a fader**: the cap glides on its own (motorized, 600–900ms ease-in-out), the slot
-    glows from inside with the iridescent thin-film light, and the meter follows. The photo shows that
-    change as light (KEY = a depth-aware light pool blooming onto the faces). Only one fader moves at a
-    time.
-  - **The user grabs a fader**: the cap lifts slightly (shadow grows), the value appears in a small
-    LED readout above the cap (Geist Mono 11px, blue), and Gemini stops and yields.
-  - **Scene memories** (= the lesson steps): 4 square illuminated hardware keys at the left of the
-    desk, numbered by LED dots, not text. The current key glows blue; completed keys glow dim white.
-  - **Mode**: a 3-position rotary knob at the right of the desk (Photo · Depth · 3D), with icon detents
-    printed around it, replacing the segmented control.
-  - **Mic**: the wide matte red capsule key at the far right. **Compare**: a spring-loaded key next to
-    it (or hold Space), revealing before/after with a soft light-band wipe across the photo.
-- **Filmstrip** stays hidden and slides in from the left edge on hover or ⌘L.
-- Gemini speech: voice only. At most one short line fades in above the desk while it talks.
-- Shaders: depth-aware relight pool, iridescent slot glow, LED meters, the light-band compare wipe,
-  the depth scan when a shot arrives, and depth parallax in 3D.
-
-### Light Desk — SIMPLIFIED (user: "don't overcomplicate… if Gemini is doing it, I need to see the changes, animated")
-- Desk content: **4 faders only**: LIGHT (sun), SHADOWS (half-moon), WARMTH (thermometer), DEPTH (layers),
-  plus the wide **red mic** key at the right. Nothing else on the desk.
-- Removed: the scene-memory keys (lesson progress is now 4 tiny LED dots above the faders), the mode
-  knob (3D is reached by ⌘3 or a double-click on the photo; no on-screen control) and the Compare key
-  (hold Space).
-- **Every Gemini change is a visible animation**: the fader glides (≈900ms ease-in-out) while the
-  photo changes in sync (the light pool blooms, warmth shifts, background separates), with the slot's
-  iridescent glow on during the move. One change at a time, about 400ms of rest between changes,
-  so an audience can follow it. It does not need to be truly live; a scripted animation is fine.
+  Modern iOS squircle icons that carry the sky, linework and halo.
