@@ -43,6 +43,7 @@ struct CameraScreen: View {
         .onDisappear { tilt.stop() }
         .onChange(of: scenePhase) { _, p in if p == .active { tilt.start() } else if p == .background { tilt.stop() } }
         .onChange(of: app.coach.caption) { _, c in suggestion.feed(c) }
+        .onChange(of: app.coach.hintSerial) { _, _ in suggestion.pin(app.coach.hint) }
         .onChange(of: app.shutterCount) { _, _ in
             fx.shot(lastThumb: app.shots.lastThumb, mockFrame: app.camera.isMock ? app.camera.mockFrame : nil)
         }

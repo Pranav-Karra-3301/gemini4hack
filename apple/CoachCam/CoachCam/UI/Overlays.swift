@@ -466,6 +466,20 @@ final class SuggestionFeed {
         }
     }
 
+    /// Shows a coach hint exactly as written (already short), held for 5 s or until the next one.
+    func pin(_ hint: String?) {
+        guard let hint, !hint.isEmpty else { return }
+        pending?.cancel()
+        settled = true
+        show(hint)
+        hide?.cancel()
+        hide = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled, let self else { return }
+            self.text = nil
+        }
+    }
+
     private func show(_ s: String) {
         guard s != text else { return }
         text = s
