@@ -4,10 +4,12 @@ import UIKit
 
 /// The shot viewer: the photo (depth sweep when it has depth), a few faders under it and the
 /// key row (hold the mic to talk an edit, or Edit for Me). Near-zero text: the fader names only.
-/// Press and hold the photo for the original; swipe it down to close.
+/// Press and hold the photo for the original; swipe it down to close. When the shot has depth, a
+/// quiet 4-key switch at the top shows it as the photo, its depth map, soft 3D splats or layers.
 struct ShotReveal: View {
     let model: RevealModel
     let voice: VoiceEdit
+    @State private var mode: ViewMode = .photo
     @State private var sweep: CGFloat = 0
     @State private var depthOpacity: Double = 0
     @State private var holding = false
@@ -22,35 +24,59 @@ struct ShotReveal: View {
             VStack(spacing: 0) {
                 GeometryReader { box in
                     let rect = Self.fit(model.photo?.size, in: box.size)
-                    photo(rect: rect)
-                        .frame(width: rect.width, height: rect.height)
-                        .clipped()
-                        .offset(x: rect.minX, y: rect.minY)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .contentShape(Rectangle())
-                        .gesture(photoGesture(height: geo.size.height))
+                    ZStack {
+                        switch mode {
+                        case .photo, .depth:
+                            photo(rect: rect)
+                                .frame(width: rect.width, height: rect.height)
+                                .clipped()
+                                .offset(x: rect.minX, y: rect.minY)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                .contentShape(Rectangle())
+                                .gesture(photoGesture(height: geo.size.height))
+                        case .splat:
+                            if let cg = model.photo?.cgImage, let png = model.depthPNG {
+                                SplatView(photo: cg, depthPNG: png)
+                            }
+                        case .layers:
+                            if let cg = model.photo?.cgImage, let png = model.depthPNG {
+                                DepthExplodeView(photo: cg, depthPNG: png)
+                            }
+                        }
+                    }
+                    .transition(.opacity)
+                    .id(mode)
                 }
                 .padding(.top, top + 52)
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
+                .padding(.horizontal, mode.is3D ? 0 : 12)
+                .padding(.bottom, mode == .photo ? 12 : bottom)
 
-                Faders(model: model)
-                    .padding(.horizontal, 22)
-                    .padding(.bottom, 16)
-                    .opacity(model.phase == .fix ? 1 : 0.3)
-                    .allowsHitTesting(model.phase == .fix)
-                ViewerBar(model: model, voice: voice)
-                    .padding(.bottom, bottom)
+                if mode == .photo {
+                    VStack(spacing: 0) {
+                        Faders(model: model)
+                            .padding(.horizontal, 22)
+                            .padding(.bottom, 16)
+                            .opacity(model.phase == .fix ? 1 : 0.3)
+                            .allowsHitTesting(model.phase == .fix)
+                        ViewerBar(model: model, voice: voice)
+                            .padding(.bottom, bottom)
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
             }
             .background(Color(red: 0.035, green: 0.035, blue: 0.04))
             .overlay(alignment: .top) {
-                HStack {
-                    RoundKey(symbol: "chevron.down", label: "Close") { model.dismiss() }
-                    Spacer()
-                    if let photo = model.photo, let png = model.depthPNG, let show = model.onShow3D {
-                        RoundKey(symbol: "cube", label: "3D") { show(photo, png) }
+                ZStack {
+                    HStack {
+                        RoundKey(symbol: "chevron.down", label: "Close") { model.dismiss() }
+                        Spacer()
+                    }
+                    if model.depthPNG != nil, model.photo?.cgImage != nil {
+                        ModeKeys(mode: $mode)
+                            .transition(.opacity)
                     }
                 }
+                .animation(.easeOut(duration: 0.3), value: model.depthPNG != nil)
                 .padding(.horizontal, 18)
                 .padding(.top, top + 4)
             }
@@ -71,6 +97,10 @@ struct ShotReveal: View {
         .onChange(of: model.fixSerial) { _, _ in
             UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.6)
         }
+        .onChange(of: model.photo) { _, _ in mode = .photo }
+        .onChange(of: mode) { _, m in
+            if m != .photo, voice.isListening { voice.cancel() }
+        }
         .onDisappear { voice.cancel() }
     }
 
@@ -80,12 +110,14 @@ struct ShotReveal: View {
             if let photo = model.photo {
                 Image(uiImage: photo).resizable().interpolation(.high)
             }
-            if let edited = model.edited {
+            if mode == .depth, let photo = model.photo, let png = model.depthPNG {
+                DepthMapView(photo: photo, depthPNG: png, holding: holding)
+            } else if let edited = model.edited {
                 Image(uiImage: edited).resizable().interpolation(.high)
                     .opacity(holding ? 0 : 1)
                     .animation(.easeOut(duration: 0.18), value: holding)
             }
-            if let map = model.depthMap {
+            if mode == .photo, let map = model.depthMap {
                 Image(uiImage: map).resizable().interpolation(.high)
                     .mask(alignment: .top) {
                         LinearGradient(stops: [.init(color: .black, location: 0.92), .init(color: .clear, location: 1)],
@@ -95,7 +127,7 @@ struct ShotReveal: View {
                     }
                     .opacity(depthOpacity)
             }
-            if model.phase == .scanning || model.working {
+            if mode == .photo, model.phase == .scanning || model.working {
                 ScanLine(height: rect.height)
             }
         }
@@ -127,6 +159,67 @@ struct ShotReveal: View {
         let s = min(box.width / size.width, box.height / size.height)
         let w = size.width * s, h = size.height * s
         return CGRect(x: (box.width - w) / 2, y: (box.height - h) / 2, width: w, height: h)
+    }
+}
+
+/// What the viewer shows.
+enum ViewMode: Int, CaseIterable, Hashable {
+    case photo, depth, splat, layers
+
+    var is3D: Bool { self == .splat || self == .layers }
+
+    var symbol: String {
+        switch self {
+        case .photo: "photo"
+        case .depth: "circle.lefthalf.filled"
+        case .splat: "cube.transparent"
+        case .layers: "square.3.layers.3d"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .photo: "Photo"
+        case .depth: "Depth map"
+        case .splat: "3D"
+        case .layers: "Layers"
+        }
+    }
+}
+
+/// Four matte icon keys in one quiet capsule; a soft frost puck slides under the chosen one.
+private struct ModeKeys: View {
+    @Binding var mode: ViewMode
+    @Namespace private var puck
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(ViewMode.allCases, id: \.self) { m in
+                Button {
+                    guard m != mode else { return }
+                    UISelectionFeedbackGenerator().selectionChanged()
+                    withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) { mode = m }
+                } label: {
+                    Image(systemName: m.symbol)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(GXColor.frost.opacity(m == mode ? 0.95 : 0.5))
+                        .frame(width: 46, height: 36)
+                        .background {
+                            if m == mode {
+                                Capsule(style: .circular)
+                                    .fill(GXColor.frost.opacity(0.14))
+                                    .matchedGeometryEffect(id: "puck", in: puck)
+                            }
+                        }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(KeyPressStyle())
+                .accessibilityLabel(m.label)
+                .accessibilityAddTraits(m == mode ? .isSelected : [])
+            }
+        }
+        .padding(4)
+        .background(GXColor.frost.opacity(0.06), in: Capsule(style: .circular))
     }
 }
 

@@ -36,14 +36,21 @@ struct DepthExplodeView: View {
             }
         }
         .animation(CoachEase.out(CoachDuration.slow), value: slabs != nil)
-        .task {
+        .task(id: ObjectIdentifier(photo)) {
+            if let hit = ShotCaches.slabs.get(photo) { slabs = hit; return }
             let photo = photo, png = depthPNG
             let built = await Task.detached(priority: .userInitiated) { () -> [DepthCloud.Slab]? in
                 guard let depth = DepthCloud.decode(png) else { return nil }
                 let s = DepthCloud.slabs(photo: photo, depth: depth)
                 return s.contains { !$0.positions.isEmpty } ? s : nil
             }.value
-            if let built { slabs = built } else { failed = true }
+            guard !Task.isCancelled else { return }
+            if let built {
+                ShotCaches.slabs.put(photo, built)
+                slabs = built
+            } else {
+                failed = true
+            }
         }
     }
 }
@@ -65,12 +72,16 @@ private struct DepthCloudSceneView: UIViewRepresentable {
         view.antialiasingMode = .multisampling4X
         view.preferredFramesPerSecond = 60
         view.rendersContinuously = true
-        view.allowsCameraControl = true
-        view.defaultCameraController.interactionMode = .orbitTurntable
-        view.defaultCameraController.target = SCNVector3Zero
-        view.defaultCameraController.inertiaEnabled = true
+        // Same hands as the splat view: drag orbits (±25°), pinch zooms, double-tap resets;
+        // a single tap collapses or explodes the layers.
+        let pan = UIPanGestureRecognizer(target: cloud, action: #selector(DepthCloudScene.onPan(_:)))
+        pan.maximumNumberOfTouches = 1
+        let pinch = UIPinchGestureRecognizer(target: cloud, action: #selector(DepthCloudScene.onPinch(_:)))
+        let reset = UITapGestureRecognizer(target: cloud, action: #selector(DepthCloudScene.reset))
+        reset.numberOfTapsRequired = 2
         let tap = UITapGestureRecognizer(target: cloud, action: #selector(DepthCloudScene.toggle))
-        view.addGestureRecognizer(tap)
+        tap.require(toFail: reset)
+        [pan, pinch, reset, tap].forEach(view.addGestureRecognizer)
         cloud.start()
         return view
     }
@@ -112,6 +123,12 @@ private final class DepthCloudScene: NSObject {
     }
 
     func start() {
+        sway(after: 0.4)
+        setExploded(true, delay: 0.5)
+    }
+
+    /// The slow idle swing (±20°), from wherever the pivot is now.
+    private func sway(after delay: TimeInterval) {
         let swing: CGFloat = 0.35
         let right = SCNAction.rotateTo(x: 0.06, y: swing, z: 0, duration: 9, usesShortestUnitArc: true)
         let left = SCNAction.rotateTo(x: 0.06, y: -swing, z: 0, duration: 9, usesShortestUnitArc: true)
@@ -119,8 +136,47 @@ private final class DepthCloudScene: NSObject {
         left.timingMode = .easeInEaseOut
         let first = SCNAction.rotateTo(x: 0.06, y: swing, z: 0, duration: 4.5, usesShortestUnitArc: true)
         first.timingMode = .easeInEaseOut
-        pivot.runAction(.sequence([.wait(duration: 0.4), first, .repeatForever(.sequence([left, right]))]), forKey: "orbit")
-        setExploded(true, delay: 0.5)
+        pivot.runAction(.sequence([.wait(duration: delay), first, .repeatForever(.sequence([left, right]))]), forKey: "orbit")
+    }
+
+    static let maxYaw: Float = 25 * .pi / 180
+    static let maxPitch: Float = 15 * .pi / 180
+    private var panStart = SIMD2<Float>(0, 0.06)
+    private var pinchStart: Float = DepthCloud.cameraZ
+
+    @objc func onPan(_ g: UIPanGestureRecognizer) {
+        if g.state == .began {
+            pivot.removeAction(forKey: "orbit")
+            pivot.removeAction(forKey: "reset")
+            panStart = SIMD2(pivot.eulerAngles.y, pivot.eulerAngles.x)
+        }
+        let t = g.translation(in: g.view)
+        let yaw = min(Self.maxYaw, max(-Self.maxYaw, panStart.x + Float(t.x) * 0.006))
+        let pitch = min(Self.maxPitch, max(-Self.maxPitch, panStart.y + Float(t.y) * 0.004))
+        pivot.eulerAngles = SCNVector3(pitch, yaw, 0)
+        if g.state == .ended || g.state == .cancelled { sway(after: 2.5) }
+    }
+
+    @objc func onPinch(_ g: UIPinchGestureRecognizer) {
+        if g.state == .began {
+            camera.removeAction(forKey: "reset")
+            pinchStart = camera.position.z
+        }
+        let z = min(DepthCloud.cameraZ * 1.6, max(DepthCloud.cameraZ * 0.45, pinchStart / Float(max(g.scale, 0.01))))
+        camera.position = SCNVector3(0, 0, z)
+    }
+
+    @objc func reset() {
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.6)
+        pivot.removeAction(forKey: "orbit")
+        let home = SCNAction.rotateTo(x: 0.06, y: 0, z: 0, duration: 0.5, usesShortestUnitArc: true)
+        home.timingMode = .easeInEaseOut
+        pivot.runAction(home, forKey: "reset") { [weak self] in
+            DispatchQueue.main.async { self?.sway(after: 2.5) }
+        }
+        let back = SCNAction.move(to: SCNVector3(0, 0, DepthCloud.cameraZ), duration: 0.5)
+        back.timingMode = .easeInEaseOut
+        camera.runAction(back, forKey: "reset")
     }
 
     @objc func toggle() { setExploded(!exploded, delay: 0) }
