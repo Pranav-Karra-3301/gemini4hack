@@ -4,6 +4,7 @@ Routes (CAM_CONTRACT.md):
   WS   /api/live?voice=1&facing=user|environment[&resume=<handle>]  Gemini Live bridge
   POST /api/cam/decide       frame (+ audio) -> Decisions API answers
   POST /api/cam/understand   1-3 frames (+ audio) -> intent / heard / reaction / tip / settings
+  POST /api/cam/director     1 frame + state -> Gemini 4 composition plan (subject, move, ready, tip)
   POST /api/cam/say          {"text", "voice"} -> audio/wav
 
 The API key stays here: it goes upstream in the x-goog-api-key header, never in a URL, a log
@@ -677,6 +678,112 @@ async def api_understand(
             "wants": str(out.get("wants") or "").strip()[:200],
             "tip": _tip(out.get("tip")),
             "settings": _tip_settings(_tip(out.get("tip")), _clean_settings(out.get("settings") or {})),
+            "model": model,
+            "ms": round((time.perf_counter() - t0) * 1000),
+        }
+    except ValueError as exc:
+        return _err(400, exc)
+    except Exception as exc:
+        return _err(502, exc)
+
+
+# ---------------------------------------------------------------------------------------------
+# POST /api/cam/director: Gemini 4 studies the newest frame and plans the next step. The phone
+# runs it back to back (one in flight) and folds the answer into its next Live [tick], so the
+# voice coach (Gemini Live) acts on a stronger model's composition judgement.
+
+DIRECTOR_SYSTEM = f"""\
+You are Director, an expert photographer studying one live camera frame from a phone. The \
+user is composing a photo right now; a voice coach will relay your plan in a few words. Judge \
+the frame exactly as you see it, never mirrored.
+
+Return:
+- subject: the ONE thing the photo is of, at most 4 words ("soda can", "friend by the window"). \
+On a cluttered surface the subject is the object the camera is centred on or that stands out, \
+not the clutter.
+- intent: the kind of photo.
+- new_shot: true if the subject or place is clearly different from the state's last_subject \
+(the phone now points at something else). False if it is the same subject reframed (closer, \
+lower, another angle), and false when last_subject is empty.
+- score: 0-10, how good this frame is as a photo of the subject right now.
+- issues: at most 3 short phrases, the most important first, only real problems (cut-off \
+subject, clutter behind or around it, subject too small, tilted horizon, subject not \
+separated from the background, too dark, blown highlights).
+- move, strength: the ONE camera move that fixes the first issue, or "hold" when the framing \
+works. Object on a table seen from above or far away: "closer" first, then "down" (lower the \
+phone to the object's height so a wall or far room is behind it, not the table clutter).
+- mode: the capture mode that suits this subject: "portrait" for one person, a pet or a single \
+object 0.3-2 m away with a busy background (the app records depth so the background can be \
+blurred later), "night" when the scene is dark, "macro" for something a few cm away, "photo" \
+otherwise.
+- ready: true when the essentials are right (subject clear and whole, nothing messy crossing \
+or crowding it, placed well, level, exposure fine). Do not chase perfection: a score of 7 or \
+more with no serious issue is ready. Keep ready true for a frame that still matches the last \
+ready framing.
+- tip: what the coach should say next, at most 8 words, warm, one concrete action \
+("Closer, and drop to the can's height."). When ready just became true: "That's it, take it." \
+Use "" when the state's last_tip already says the same thing.
+
+{DIRECTIONS_TEXT}
+
+{FRAMING_TEXT}"""
+
+DIRECTOR_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "subject": {"type": "STRING"},
+        "intent": {"type": "STRING", "enum": INTENTS},
+        "new_shot": {"type": "BOOLEAN"},
+        "issues": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "move": {"type": "STRING", "enum": MOVES},
+        "strength": {"type": "STRING", "enum": ["small", "medium", "large"]},
+        "mode": {"type": "STRING", "enum": MODES},
+        "score": {"type": "INTEGER"},
+        "ready": {"type": "BOOLEAN"},
+        "tip": {"type": "STRING"},
+    },
+    "required": ["subject", "intent", "new_shot", "issues", "move", "strength", "mode", "score", "ready", "tip"],
+    "propertyOrdering": ["subject", "intent", "new_shot", "issues", "move", "strength", "mode", "score", "ready",
+                         "tip"],
+}
+
+DIRECTOR_STATE_KEYS = ("mode", "state_line", "last_subject", "last_intent", "last_move", "last_tip", "ready",
+                       "scene_shift", "heard", "facing")
+
+
+@router.post("/api/cam/director")
+async def api_director(frame: UploadFile = File(...), state: str | None = Form(None)):
+    t0 = time.perf_counter()
+    try:
+        img = await frame.read()
+        if not img:
+            raise ValueError("empty frame")
+        st = _parse_state(state)
+        slim = {k: st[k] for k in DIRECTOR_STATE_KEYS if st.get(k) not in (None, "")}
+        parts: list[dict] = [
+            {"text": "Camera state: " + json.dumps(slim)[:1500]},
+            {"inlineData": {"mimeType": "image/jpeg", "data": _b64(img)}},
+        ]
+        model = _env("DIRECTOR_MODEL", "gemini-4-hydrogen")
+        out = (await gemini.generate(
+            model, parts, schema=DIRECTOR_SCHEMA, system=DIRECTOR_SYSTEM,
+            thinking=_env("DIRECTOR_THINKING", "low"), media_resolution=_env("DIRECTOR_MEDIA", "low"),
+            tag="cam_director", timeout=15.0, attempts=1,
+        )).data
+        if not isinstance(out, dict):
+            raise gemini.GeminiError(f"director: expected a JSON object from {model}", 200)
+        score = _clamp(out.get("score"), 0, 10)
+        return {
+            "subject": _words(out.get("subject"), 4),
+            "intent": out.get("intent") if out.get("intent") in INTENTS else "other",
+            "new_shot": bool(out.get("new_shot")) and bool(st.get("last_subject")),
+            "issues": [_words(i, 10) for i in (out.get("issues") or []) if str(i).strip()][:3],
+            "move": out.get("move") if out.get("move") in MOVES else "hold",
+            "strength": out.get("strength") if out.get("strength") in ("small", "medium", "large") else "medium",
+            "mode": out.get("mode") if out.get("mode") in MODES else "photo",
+            "score": int(score) if score is not None else 0,
+            "ready": bool(out.get("ready")),
+            "tip": _tip(out.get("tip")),
             "model": model,
             "ms": round((time.perf_counter() - t0) * 1000),
         }
