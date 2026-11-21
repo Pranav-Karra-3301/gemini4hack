@@ -1,5 +1,5 @@
 import './style.css';
-import { PRODUCT, CHAPTERS, PHONE, THESIS, HOOD } from './config.js';
+import { PRODUCT, CHAPTERS, PHONE, THESIS, APP } from './config.js';
 import { ScenePlayer, StepTrack } from './scenes.js';
 
 // Each section's module is a guarded dynamic import. A missing or broken module never breaks
@@ -10,6 +10,7 @@ const MODULES = {
   story: import.meta.glob('./story/*.js'),
   showcase: import.meta.glob('./showcase/*.js'),
   looks: import.meta.glob('./looks/*.js'),
+  app: import.meta.glob('./app/*.js'),
   footer: import.meta.glob('./footer/*.js'),
 };
 
@@ -105,8 +106,8 @@ function sectionMarkup(ch) {
           <div class="col-media voice__stage rv-media">${MIC}</div>
         </div>
       </section>`;
-    case 'hood':
-      return `<section class="hood-host" id="${ch.id}"></section>`;
+    case 'app':
+      return `<section class="app-host" id="${ch.id}" aria-label="${APP.title}"></section>`;
     case 'footer':
       return `<footer class="footer-host" id="${ch.id}"></footer>`;
   }
@@ -223,8 +224,8 @@ whenNear(byId('looks'), () => {
   mountModule(byId('looks'), 'looks', 'mountLooks', [ch], plainSection(headMarkup(ch)));
 });
 
-whenNear(byId('hood'), () => {
-  mountModule(byId('hood'), 'story', 'mountHood', [], plainSection(`<p class="eyebrow">${HOOD.label}</p><h2 class="h2">${HOOD.title}</h2><p class="lede">${HOOD.lede}</p>`));
+whenNear(byId('app'), () => {
+  mountModule(byId('app'), 'app', 'mountApp', [], plainSection(`<p class="eyebrow">${APP.label}</p><h2 class="h2">${APP.title}</h2><p class="lede">${APP.lede}</p>`));
 });
 
 whenNear(byId('footer'), () => {

@@ -1,4 +1,4 @@
-// Small DOM and motion helpers shared by the story modules (thesis, trace, hood).
+// Small DOM and motion helpers shared by the story modules (thesis, trace).
 
 export const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 

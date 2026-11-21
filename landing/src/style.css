@@ -455,7 +455,7 @@ main { position: relative; z-index: 1; overflow-x: clip; }
 
 /* ---------------- module hosts (each module owns its layout once mounted) ---------------- */
 
-.lidar-host, .looks-host, .hood-host { position: relative; z-index: 1; }
+.lidar-host, .looks-host, .app-host { position: relative; z-index: 1; }
 .footer-host { position: relative; display: block; }
 .section--plain { min-height: 60svh; display: grid; align-items: center; }
 .footer-plain { padding-block: 120px 48px; }
