@@ -177,27 +177,46 @@ def _out_size(h: int, w: int) -> tuple[int, int]:
 CACHE_SIZE = 4  # recent results keyed by sha1(bytes): /api/masks reuses /api/depth's map
 _cache: OrderedDict[str, tuple[np.ndarray, dict]] = OrderedDict()
 _cache_lock = threading.Lock()
+_inflight: dict[str, threading.Lock] = {}  # per-key: concurrent callers share one inference
+
+
+def _cached(key: str) -> tuple[np.ndarray, dict] | None:
+    with _cache_lock:
+        hit = _cache.get(key)
+        if hit is not None:
+            _cache.move_to_end(key)
+    return None if hit is None else (hit[0].copy(), dict(hit[1]))
 
 
 def infer_depth(image_bytes: bytes) -> tuple[np.ndarray, dict]:
     """Depth in meters, float32 (H, W) with long side <= 512, row-major, top-left origin.
 
     The last CACHE_SIZE results are kept (LRU, keyed by sha1 of the bytes); a hit returns copies.
+    Concurrent calls on the same bytes run Depth Pro once: later callers wait for the first and
+    take its cached result (if it failed, the next one tries again).
     """
     key = hashlib.sha1(image_bytes).hexdigest()
-    with _cache_lock:
-        hit = _cache.get(key)
-        if hit is not None:
-            _cache.move_to_end(key)
+    hit = _cached(key)
     if hit is not None:
-        return hit[0].copy(), dict(hit[1])
-    arr, meta = _infer_depth_uncached(image_bytes)
+        return hit
     with _cache_lock:
-        _cache[key] = (arr.copy(), dict(meta))
-        _cache.move_to_end(key)
-        while len(_cache) > CACHE_SIZE:
-            _cache.popitem(last=False)
-    return arr, meta
+        lock = _inflight.setdefault(key, threading.Lock())
+    try:
+        with lock:
+            hit = _cached(key)
+            if hit is not None:
+                return hit
+            arr, meta = _infer_depth_uncached(image_bytes)
+            with _cache_lock:
+                _cache[key] = (arr.copy(), dict(meta))
+                _cache.move_to_end(key)
+                while len(_cache) > CACHE_SIZE:
+                    _cache.popitem(last=False)
+            return arr, meta
+    finally:
+        with _cache_lock:
+            if _inflight.get(key) is lock:
+                del _inflight[key]
 
 
 def _infer_depth_uncached(image_bytes: bytes) -> tuple[np.ndarray, dict]:
