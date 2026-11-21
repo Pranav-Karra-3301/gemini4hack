@@ -79,6 +79,7 @@ export const CHAPTERS = [
       { t: 1.9, dir: 'call', text: 'decide({ move: "left", p: 0.82 })', meta: 'gemini-decision-1 · the left edge glows' },
       { t: 3.6, dir: 'call', text: 'decide({ ready: "yes", p: 0.91 })', meta: 'gemini-decision-1 · “That’s it.”' },
     ],
+    traceLabel: 'Agent trace · live',
     traceNote: 'Replayed faster than real time. A Gemini 4 call takes about 3.7 s; a Decision call about 0.8 s.',
   },
   {
@@ -117,7 +118,8 @@ export const CHAPTERS = [
 export const HOOD = {
   label: 'Under the hood',
   title: 'What Gemini does at each step.',
-  lede: 'Two lanes: the phone senses and acts, Gemini reasons and calls tools. Model ids are the real ones.',
+  lede: 'The phone senses and acts. Gemini reasons and calls tools. Real model ids.',
+  lanes: { phone: 'On the iPhone', gemini: 'Gemini' },
   stages: [
     {
       name: 'Frame and state',
