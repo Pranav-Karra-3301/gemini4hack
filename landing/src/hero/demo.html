@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hero demo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,400..700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --t-display: clamp(88px, 11vw, 168px);
+        --t-lede: clamp(18px, 1.5vw, 21px);
+      }
+      html,
+      body {
+        margin: 0;
+        background: #05060b;
+        color: #eef3ff;
+        font-family: 'Google Sans Flex', system-ui, sans-serif;
+      }
+      #hero {
+        position: relative;
+        height: 100svh;
+        overflow: hidden;
+      }
+      /* Placeholder copy, only to judge the composition */
+      .copy {
+        position: absolute;
+        inset: 0;
+        max-width: 1280px;
+        margin-inline: auto;
+        padding-inline: clamp(20px, 5vw, 64px);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        pointer-events: none;
+      }
+      .copy > * {
+        max-width: 45%;
+      }
+      .wordmark {
+        margin: 0;
+        font-size: var(--t-display);
+        font-weight: 700;
+        letter-spacing: -0.045em;
+        line-height: 0.88;
+      }
+      .tagline {
+        margin: 24px 0 0;
+        font-size: var(--t-lede);
+        line-height: 1.5;
+        letter-spacing: -0.005em;
+        color: rgb(238 243 255 / 0.68);
+        max-width: 34ch;
+      }
+      .badges {
+        display: flex;
+        gap: 10px;
+        margin-top: 28px;
+      }
+      .badge {
+        font-size: 13px;
+        line-height: 1;
+        padding: 8px 12px;
+        border-radius: 999px;
+        border: 1px solid rgb(238 243 255 / 0.16);
+        color: rgb(238 243 255 / 0.68);
+      }
+      @media (max-width: 767px) {
+        .copy {
+          justify-content: flex-end;
+          padding-bottom: 12svh;
+        }
+        .copy > * {
+          max-width: none;
+        }
+      }
+      .filler {
+        height: 130vh;
+        display: grid;
+        place-items: center;
+        font-size: 14px;
+        color: rgb(238 243 255 / 0.35);
+      }
+    </style>
+  </head>
+  <body>
+    <section id="hero">
+      <div class="copy">
+        <h1 class="wordmark">Heliocam</h1>
+        <p class="tagline">Gemini inside the camera. It reads the scene in 3D and moves the real controls.</p>
+        <div class="badges"><span class="badge">iPhone · LiDAR</span><span class="badge">Gemini 4</span></div>
+      </div>
+    </section>
+    <div class="filler">Scroll: the hero pauses off screen</div>
+    <script type="module">
+      import { mountHero } from './hero.js';
+      window.__hero = mountHero(document.getElementById('hero'));
+    </script>
+  </body>
+</html>
