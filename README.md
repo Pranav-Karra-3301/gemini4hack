@@ -69,3 +69,18 @@ cp .env.example .env    # then fill in the keys
 
 Not in git: model weights (downloaded on first run), the SHARP `.spz` splats in `web/public/splats/`
 (made by SHARP from the wayback checkout, see `docs/ARCHITECTURE.md` §5), and the generated Xcode projects (run `xcodegen generate`).
+
+### Tests and checks
+
+Run the ones for the area you touched before you push, and all of them before you mark a PR ready.
+
+| What | Command | Needs |
+|---|---|---|
+| CoachKit unit tests | `cd apple/CoachKit && swift test` | Xcode 27.2. `sliderLogic()` is flaky (#21) |
+| Mac app builds | `cd apple/CoachStudio && xcodegen generate && xcodebuild -project CoachStudio.xcodeproj -scheme CoachStudio -derivedDataPath build CODE_SIGNING_ALLOWED=NO build` | Xcode, xcodegen |
+| iPhone app builds | `cd apple/CoachCam && xcodegen generate && xcodebuild -project CoachCam.xcodeproj -scheme CoachCam -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build` | Xcode, xcodegen |
+| Web demos build | `cd web && npm ci && npm run build` | Node |
+| Core starts | `cd server && uv sync && uv run --no-sync uvicorn app:app --port 8799`, then `curl localhost:8799/api/health` shows `"ok": true` | uv |
+| Core model checks | `server/checks/*.py`, see [Checks](#checks) | Models, `GEMINI_API_KEY` |
+
+No Xcode on your Mac? Ask on your PR for someone who has it to run the Swift rows, as on #13.
