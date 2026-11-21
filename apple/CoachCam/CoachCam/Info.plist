@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Coach Cam</string>
+	<string>Heliocam</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -34,7 +34,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Coach Cam is a camera: it shows the viewfinder, lets the coach set focus, exposure and white balance, and scans your Mac's pairing code.</string>
+	<string>Heliocam is a camera: it shows the viewfinder, lets the coach set focus, exposure and white balance, and scans your Mac's pairing code.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Talk to the coach while you shoot. Your voice goes straight to Gemini Live and is not recorded.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

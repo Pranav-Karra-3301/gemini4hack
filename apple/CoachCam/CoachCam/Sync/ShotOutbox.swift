@@ -13,6 +13,8 @@ actor ShotOutbox {
         var id: String
         var created: Date
         var meta: ShotMeta
+        /// The instant review streamed at the shutter; sent as meta `review_id` so Core attaches it.
+        var reviewID: String?
         var attempts: Int = 0
         var lastError: String?
     }
@@ -35,9 +37,9 @@ actor ShotOutbox {
         try? FileManager.default.createDirectory(at: failedDir, withIntermediateDirectories: true)
     }
 
-    func add(jpeg: Data, meta: ShotMeta) throws -> Entry {
+    func add(jpeg: Data, meta: ShotMeta, reviewID: String? = nil) throws -> Entry {
         let id = "\(Int(Date().timeIntervalSince1970 * 1000))-\(UUID().uuidString.prefix(6))"
-        let e = Entry(id: id, created: Date(), meta: meta)
+        let e = Entry(id: id, created: Date(), meta: meta, reviewID: reviewID)
         try jpeg.write(to: dir.appendingPathComponent("\(id).jpg"), options: .atomic)
         try JSONEncoder().encode(e).write(to: dir.appendingPathComponent("\(id).json"), options: .atomic)
         return e
@@ -58,7 +60,8 @@ actor ShotOutbox {
             let jpgURL = dir.appendingPathComponent("\(e.id).jpg")
             guard let jpeg = try? Data(contentsOf: jpgURL) else { remove(e.id); continue }
             do {
-                let shot = try await client.uploadShot(jpeg: jpeg, meta: e.meta)
+                let shot = try await CoreExtras.uploadShot(client: client, jpeg: jpeg, meta: e.meta,
+                                                           extra: e.reviewID.map { ["review_id": $0] } ?? [:])
                 remove(e.id)
                 await uploaded(e, shot)
             } catch let err as CoachError {
@@ -114,6 +117,13 @@ final class SyncModel {
     @ObservationIgnored var clientProvider: (() -> CoachClient?)?
     @ObservationIgnored var onUnauthorized: (() -> Void)?
     @ObservationIgnored var onNetworkBack: (() -> Void)?
+    /// A shot reached Core (outbox entry id, the new record).
+    @ObservationIgnored var onUploaded: ((String, Shot) -> Void)?
+    /// An upload couldn't reach Core (the app looks for it again, e.g. over the other link).
+    @ObservationIgnored var onOffline: ((String) -> Void)?
+    /// Uploads wait while a hold is open (the shutter's review, so Core can attach it).
+    @ObservationIgnored private var holds: Set<Int> = []
+    @ObservationIgnored private var nextHold = 0
     @ObservationIgnored private var draining = false
     @ObservationIgnored private var retryTask: Task<Void, Never>?
     @ObservationIgnored private var backoff: TimeInterval = 2
@@ -131,22 +141,43 @@ final class SyncModel {
         Task { pending = await outbox.count }
     }
 
-    /// Queues a shot (on disk first) and starts uploading.
-    func enqueue(jpeg: Data, meta: ShotMeta, thumbnail: CGImage?) async {
+    /// Queues a shot (on disk first) and starts uploading. Returns the outbox entry id.
+    @discardableResult
+    func enqueue(jpeg: Data, meta: ShotMeta, reviewID: String? = nil, thumbnail: CGImage?) async -> String? {
         lastThumb = thumbnail ?? lastThumb
+        let id: String
         do {
-            _ = try await outbox.add(jpeg: jpeg, meta: meta)
+            id = try await outbox.add(jpeg: jpeg, meta: meta, reviewID: reviewID).id
         } catch {
             status = .failed("Couldn't save the shot: \(error.localizedDescription)")
-            return
+            return nil
         }
         pending = await outbox.count
         backoff = 2
         kick()
+        return id
+    }
+
+    /// Pauses uploads until `release(_:)` or `seconds` pass. Returns the hold's id.
+    func hold(seconds: Double) -> Int {
+        nextHold += 1
+        let id = nextHold
+        holds.insert(id)
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            self?.release(id)
+        }
+        return id
+    }
+
+    func release(_ id: Int) {
+        guard holds.remove(id) != nil else { return }
+        if holds.isEmpty { kick() }
     }
 
     /// Uploads now if there's anything queued and a client.
     func kick() {
+        guard holds.isEmpty else { return }
         guard !draining, let client = clientProvider?() else {
             if pending > 0 && clientProvider?() == nil { status = .queued }
             return
@@ -156,8 +187,8 @@ final class SyncModel {
         Task {
             if await outbox.count > 0 { status = .uploading }
             let t0 = Date()
-            let result = await outbox.drain(client: client) { _, shot in
-                await self.didUpload(shot, since: t0)
+            let result = await outbox.drain(client: client) { entry, shot in
+                await self.didUpload(entry.id, shot, since: t0)
             }
             pending = await outbox.count
             draining = false
@@ -171,13 +202,15 @@ final class SyncModel {
             case .offline(let m):
                 status = pending > 0 ? .queued : .failed(m)
                 scheduleRetry()
+                onOffline?(m)
             }
         }
     }
 
-    private func didUpload(_ shot: Shot, since t0: Date) {
+    private func didUpload(_ entryID: String, _ shot: Shot, since t0: Date) {
         lastShotID = shot.id
         lastUploadMs = Int(Date().timeIntervalSince(t0) * 1000)
+        onUploaded?(entryID, shot)
     }
 
     private func scheduleRetry() {

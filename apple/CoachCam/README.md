@@ -1,8 +1,11 @@
 # CoachCam (iPhone)
 
-A native camera with a live Gemini coach. You see the real manual controls (ISO, shutter, EV,
-focus, white balance and zoom) as dials, and when Gemini changes a setting you watch the dial
-turn. Shots sync to Coach Core on your Mac. The API spec is `docs/CORE_API.md`.
+A native camera with a live Gemini coach (the v2 "instruments" design, Paper page "v2 · Camera
+(iPhone)"). A rounded viewfinder card whose own edge is the guide (`EdgeGlow` from `guide`;
+`hold` pulses the whole edge), then the ISO / SS / EV drums and the focus ruler (drag them; when
+Gemini sets them they roll with the iridescent glow), and two keys: the mic (voice mode, live mic
+level) and the lantern shutter (glows on `shot_ready`, then shows Core's analysis of the shot as
+a ring, then a check). Shots sync to Coach Core on your Mac. The API spec is `docs/CORE_API.md`.
 
 ## How it works
 
@@ -35,6 +38,17 @@ turn. Shots sync to Coach Core on your Mac. The API spec is `docs/CORE_API.md`.
     - `take_photo` takes and syncs a photo.
   - A `[tick]` check-in goes out every 4 s while nobody is talking, and only if the scene changed.
   - When you turn a dial yourself, Gemini gets that as silent context.
+- **Instant review** (`Coach/InstantReview.swift`, `Sync/CoreExtras.swift`). At the shutter a
+  ≤1024 px copy goes to `POST /api/review` with the live context (intent, subject, what the user
+  said, the coach's lines, settings). The verdict chip appears at `decision`, the first suggestion
+  chip at `suggestion` (its direction also lights the viewfinder edge), the rest at `final`; they
+  fade after ~5 s or on tap. The first line is spoken in the coach's Gemini voice: a text turn into
+  the Live session, or Core's `/api/cam/say` through the Live player when no session runs. The
+  full upload waits for the review (≤4 s) and carries `review_id`, so Core attaches it to the shot.
+- **Words on screen.** Only the coach's latest spoken line (one glass badge, ≤2 lines, fades ~4 s
+  after it stops) and, fainter above it, the user's own words while they speak.
+- **Depth scan.** After an upload the shutter's ring follows that shot over `GET /api/events`:
+  finished stages of depth, score, regions, masks, suggest (out of 5), then "depth ready".
 - **Sync** (`Sync/ShotOutbox.swift`). Each shot is saved to disk first, then uploaded with
   `POST /api/shots`. The upload includes the capture settings, intent and subject, and the
   coach's lines. Failed uploads retry with backoff, and again when the network comes back.
@@ -95,7 +109,11 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild -project Coa
 4. The status pill reads **LIVE** once Core answers and the coach is connected. Tap the pill to
    pause or resume the coach.
 
-The phone and the Mac must be on the same Wi-Fi. The token is stored in the Keychain. If the
+The phone and the Mac must be on the same Wi-Fi, or joined by the USB cable: with the Mac's
+`tools/usb_bridge.py` running, the app talks to Core through `USBUplink` (no pairing needed; a
+tiny "USB" shows next to the live dot). If the saved address stops answering, the app browses
+Bonjour, resolves every address of the Mac (Wi-Fi, the iPhone hotspot link `172.20.10.x`, ...),
+probes `/api/health` on each and keeps the first that answers, with the same token. The token is stored in the Keychain. If the
 Mac's IP changes, the app finds Core again over Bonjour and keeps the token. If Core refuses
 the token (a new `.coach_token`), the pill reads **PAIR AGAIN**.
 
@@ -127,7 +145,9 @@ Measured in the simulator on 2026-11-21, with Core on the Mac and gemini-3.8-liv
 ## Known gaps
 
 - Fonts fall back to SF Mono and SF Pro until Geist Mono and Inter Tight are bundled.
-- Only the back camera is supported; there is no selfie mode yet.
+- Only the back camera is supported; there is no selfie mode yet. It uses the physical wide lens
+  (virtual multi-lens devices refuse custom exposure and manual focus), so zoom is digital and
+  there is no 0.5× or tele.
 - The app is portrait only. Photos and frames are still upright in landscape, via the rotation
   coordinator.
 - Not yet tested on real hardware: AVFoundation control, depth capture, the QR scanner and

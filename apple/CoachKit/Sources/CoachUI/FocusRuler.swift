@@ -217,6 +217,7 @@ struct RulerFace: View {
                 Text(parts[1]).font(GXFont.display(13)).tracking(0.26).foregroundStyle(GXColor.label)
             }
             .fixedSize()
+            .instrumentGlyphTurn()
             .frame(height: 28)
             .frame(maxWidth: .infinity, alignment: .trailing)
             .padding(.trailing, 12)

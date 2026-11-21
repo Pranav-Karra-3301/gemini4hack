@@ -31,6 +31,9 @@ public struct EditRecipe: Codable, Hashable, Sendable {
     /// Film look (CORE_API.md §6), applied after the global sliders. nil = none. Additive: old
     /// recipes without `look` decode as before and encode byte-identically.
     public var look: LookRef?
+    /// Masked local adjustments (CORE_API.md §7, Layers.swift), at most 5, applied in order after
+    /// the global sliders and before the look. nil = none. Additive like `look`.
+    public var layers: [EditLayer]?
 
     public init(values: [Slider: Double] = [:], subject: String? = nil, crop: Crop? = nil, version: Int = 1) {
         self.version = version
@@ -68,17 +71,19 @@ public struct EditRecipe: Codable, Hashable, Sendable {
     }
 
     /// Back to the original (keeps `subject`; drops the look).
-    public mutating func reset() { values = [:]; crop = nil; look = nil }
+    public mutating func reset() { values = [:]; crop = nil; look = nil; layers = nil }
 
     /// True when rendering this recipe would return the original image.
-    public var isIdentity: Bool { values.isEmpty && (crop?.isIdentity ?? true) && (look?.strength ?? 0) <= 0 }
+    public var isIdentity: Bool {
+        values.isEmpty && (crop?.isIdentity ?? true) && (look?.strength ?? 0) <= 0 && (layers ?? []).allSatisfy(\.isIdentity)
+    }
 
     /// Values as `[String: Double]` (JSON names), e.g. for `suggestEdit(values:)` or prompts.
     public var namedValues: [String: Double] {
         Dictionary(uniqueKeysWithValues: values.map { ($0.key.rawValue, $0.value) })
     }
 
-    enum CodingKeys: String, CodingKey { case version, values, subject, crop, look }
+    enum CodingKeys: String, CodingKey { case version, values, subject, crop, look, layers }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -88,6 +93,9 @@ public struct EditRecipe: Codable, Hashable, Sendable {
                   crop: try c.decodeIfPresent(Crop.self, forKey: .crop),
                   version: try c.decodeIfPresent(Int.self, forKey: .version) ?? 1)
         look = (try? c.decodeIfPresent(LookRef.self, forKey: .look)) ?? nil
+        if let raw = (try? c.decodeIfPresent([JSONValue].self, forKey: .layers)) ?? nil {
+            layers = EditLayer.decodeList(raw)
+        }
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -97,6 +105,7 @@ public struct EditRecipe: Codable, Hashable, Sendable {
         try c.encodeIfPresent(subject, forKey: .subject)
         try c.encodeIfPresent(crop, forKey: .crop)
         try c.encodeIfPresent(look, forKey: .look)
+        try c.encodeIfPresent(layers, forKey: .layers)
     }
 }
 

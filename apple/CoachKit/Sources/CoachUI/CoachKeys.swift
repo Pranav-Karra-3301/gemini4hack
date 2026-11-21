@@ -125,6 +125,7 @@ struct MicKey: View {
                 .clipShape(shape)
             GeometryReader { geo in
                 MicGlyph()
+                    .instrumentGlyphTurn()
                     .frame(width: 22, height: 22)
                     .position(x: listening ? 27 : geo.size.width / 2, y: geo.size.height / 2)
                 if listening {
@@ -241,9 +242,9 @@ struct ShutterKey: View {
                 .clipShape(shape)
             // Debossed mark.
             if shutter == .depthReady {
-                DebossCheck().transition(.opacity)
+                DebossCheck().instrumentGlyphTurn().transition(.opacity)
             } else {
-                DebossPlus().transition(.opacity)
+                DebossPlus().instrumentGlyphTurn().transition(.opacity)
             }
             GrainOverlay(amount: 0.021, animated: false, tile: 120)
                 .blendMode(.overlay)

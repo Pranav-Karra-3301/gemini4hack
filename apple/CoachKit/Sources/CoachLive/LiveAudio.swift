@@ -135,6 +135,13 @@ final class LiveAudioCore: @unchecked Sendable {
     private var converter: LiveCaptureConverter?   // tap thread only
     private var observers: [NSObjectProtocol] = []
     private var running = false                    // queue only
+    /// Echo cancellation (voice processing). Off after VPIO fails to initialize (e.g. a Bluetooth
+    /// headset in HFP on macOS: kAUInitialize → -10875) or with `COACH_NO_VP=1` /
+    /// `-liveNoVoiceProcessing YES` (QA: hear audio played through the speakers). Queue only.
+    private var useVoiceProcessing = !LiveAudioCore.voiceProcessingDisabled
+    static var voiceProcessingDisabled: Bool {
+        ProcessInfo.processInfo.environment["COACH_NO_VP"] == "1" || UserDefaults.standard.bool(forKey: "liveNoVoiceProcessing")
+    }
 
     // Guarded by `lock`.
     private var _onCapture: (@Sendable (Data) -> Void)?
@@ -157,7 +164,7 @@ final class LiveAudioCore: @unchecked Sendable {
         lock.withLock { micMuted = muted }
         queue.async { [self] in
             // Touching inputNode before start() would create it (and may prompt for the mic).
-            if running { engine.inputNode.isVoiceProcessingInputMuted = muted }
+            if running && useVoiceProcessing { engine.inputNode.isVoiceProcessingInputMuted = muted }
         }
     }
 
@@ -268,9 +275,23 @@ final class LiveAudioCore: @unchecked Sendable {
         try? session.setPreferredIOBufferDuration(0.02)
         try session.setActive(true)
         #endif
-        try buildGraph()
-        engine.prepare()
-        try engine.start()
+        do {
+            try buildGraph()
+            engine.prepare()
+            try engine.start()
+        } catch where useVoiceProcessing {
+            // VPIO can't initialize on some routes (measured: a Bluetooth headset as both input and
+            // output, -10875 on the output unit). A headset needs no echo cancellation: retry plain.
+            log.error("voice processing failed (\(error.localizedDescription, privacy: .public)); retrying without it")
+            engine.inputNode.removeTap(onBus: 0)
+            engine.stop()
+            engine = AVAudioEngine()
+            playerLock.withLock { player = AVAudioPlayerNode() }
+            useVoiceProcessing = false
+            try buildGraph()
+            engine.prepare()
+            try engine.start()
+        }
         playerLock.withLock { player.play() }
         running = true
         if observers.isEmpty { observe() }
@@ -279,15 +300,19 @@ final class LiveAudioCore: @unchecked Sendable {
 
     private func buildGraph() throws {
         let input = engine.inputNode
-        if !input.isVoiceProcessingEnabled {
-            do { try input.setVoiceProcessingEnabled(true) } catch {
-                throw LiveError.audio("voice processing unavailable: \(error.localizedDescription)")
+        if useVoiceProcessing {
+            if !input.isVoiceProcessingEnabled {
+                do { try input.setVoiceProcessingEnabled(true) } catch {
+                    throw LiveError.audio("voice processing unavailable: \(error.localizedDescription)")
+                }
             }
+            // Don't duck other apps more than needed (macOS VP ducks system audio hard by default).
+            input.voiceProcessingOtherAudioDuckingConfiguration =
+                AVAudioVoiceProcessingOtherAudioDuckingConfiguration(enableAdvancedDucking: true, duckingLevel: .min)
+            input.isVoiceProcessingInputMuted = lock.withLock { micMuted }
+        } else if input.isVoiceProcessingEnabled {
+            try? input.setVoiceProcessingEnabled(false)
         }
-        // Don't duck other apps more than needed (macOS VP ducks system audio hard by default).
-        input.voiceProcessingOtherAudioDuckingConfiguration =
-            AVAudioVoiceProcessingOtherAudioDuckingConfiguration(enableAdvancedDucking: true, duckingLevel: .min)
-        input.isVoiceProcessingInputMuted = lock.withLock { micMuted }
 
         if player.engine == nil { engine.attach(player) }
         engine.connect(player, to: engine.mainMixerNode, format: playFormat)

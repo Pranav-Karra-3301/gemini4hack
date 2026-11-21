@@ -18,7 +18,7 @@ public enum EditQuality: Hashable, Sendable {
 /// Pipeline (linear light unless noted): preview downscale (cached) → depth blur (cached) →
 /// white balance → local highlights/shadows → subject/background light → exposure →
 /// tone curve (perceptual, with a highlight shoulder) → clarity (perceptual, luminance only) →
-/// vibrance → saturation → straighten + crop → post-crop vignette.
+/// vibrance → saturation → local layers → film look → straighten + crop → post-crop vignette → grain.
 ///
 /// All radii are relative to the image size, so a preview and its export match.
 /// Thread-safe: render from any thread. Pass the same `CIImage` instances across renders so the
@@ -37,6 +37,8 @@ public final class EditRenderer: @unchecked Sendable {
     private static let cacheLimit = 4
     /// Film looks by id (`register(look:)`, EditLook.swift).
     let looks = LookLibrary()
+    /// Layer masks by name and their feathered alphas (`register(mask:named:)`, EditLayers.swift).
+    let layerMasks = LayerMaskStore()
 
     /// - Parameter device: the GPU to use; `nil` falls back to Core Image's default.
     public init(device: MTLDevice? = MTLCreateSystemDefaultDevice()) {
@@ -169,6 +171,11 @@ public final class EditRenderer: @unchecked Sendable {
             ])
         }
 
+        // 9a. Local layers (§7, EditLayers.swift): each layer's sliders through its feathered mask, in order.
+        if let layers = recipe.layers, !layers.isEmpty {
+            img = applyLayers(layers, to: img, source: source, depth: depth, L: L, extent: extent)
+        }
+
         // 9b. Film look (§6, EditLookEffects.swift): LUT, halation, bloom; vignette + grain after the crop.
         let look = looks.resolve(recipe.look)
         if let look { img = Self.lookColor(img, look, L: L, extent: extent) }
@@ -195,6 +202,7 @@ public final class EditRenderer: @unchecked Sendable {
         lock.lock()
         depthCache.removeAll(); maskCache.removeAll(); mapCache.removeAll()
         lock.unlock()
+        layerMasks.purge()
         context.clearCaches()
     }
 

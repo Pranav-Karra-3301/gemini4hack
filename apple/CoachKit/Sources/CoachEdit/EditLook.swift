@@ -136,17 +136,8 @@ public final class CubeLUT: @unchecked Sendable {
 
     /// Applies the LUT at `strength` (0 returns `image`). Input is converted to sRGB for the lookup
     /// and back to the working space, as the `.cube` expects.
-    nonisolated(unsafe) static var probeMixOnGPU = false
     public func apply(to image: CIImage, strength: Double = 1) -> CIImage {
         guard Self.bucket(strength) > 0 else { return image }
-        if Self.probeMixOnGPU {
-            let full = image.applyingFilter("CIColorCubeWithColorSpace", parameters: [
-                "inputCubeDimension": size, "inputCubeData": cubeData(strength: 1), "inputColorSpace": Self.srgb,
-            ]).applyingFilter("CILinearToSRGBToneCurve")
-            return image.applyingFilter("CILinearToSRGBToneCurve").applyingFilter("CIDissolveTransition", parameters: [
-                kCIInputTargetImageKey: full, kCIInputTimeKey: Double(Self.bucket(strength)) / 100,
-            ]).applyingFilter("CISRGBToneCurveToLinear")
-        }
         return image.applyingFilter("CIColorCubeWithColorSpace", parameters: [
             "inputCubeDimension": size,
             "inputCubeData": cubeData(strength: strength),

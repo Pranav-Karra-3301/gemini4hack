@@ -1,3 +1,4 @@
+import AVFoundation
 import CoachAPI
 import CoachLive
 import CoachModels
@@ -37,8 +38,10 @@ final class CoachSession {
     private(set) var phase: Phase = .off
     /// The coach's current line (last few words, for the caption).
     private(set) var caption: String?
-    /// What the user just said (reaction chip).
+    /// What the user just said (clears after 3 s).
     private(set) var heard: String?
+    /// The user's last utterance (kept; goes into the instant review's context).
+    private(set) var lastHeard: String?
     private(set) var guide: GuideDirection?
     private(set) var guideStrength: GuideStrength = .medium
     private(set) var intent: ShotIntent?
@@ -58,8 +61,44 @@ final class CoachSession {
     /// viewfinder overlay; nil after a scene shift until a fresh answer, and when the session ends.
     private(set) var direction: Direction?
 
+    /// Voice mode (the mic key): the mic listens and the coach speaks. Off: both muted, the
+    /// coach's words show as one caption line instead.
     var voiceOn = true {
-        didSet { audio?.isOutputMuted = !voiceOn }
+        didSet { applyAudioMutes() }
+    }
+    private func applyAudioMutes() {
+        guard let audio else { return }
+        audio.isOutputMuted = !voiceOn
+        let mic = !voiceOn || live == nil
+        if audio.isMicMuted != mic { audio.isMicMuted = mic }
+    }
+
+    /// The instant review's line in the coach's own voice: a typed turn into the Live session,
+    /// which says it naturally. Returns false when no session is live (the app uses Core's TTS).
+    func speakReview(_ line: String, verdict: String?) -> Bool {
+        guard phase == .live, let live else { return false }
+        live.sendText("[review] Verdict \(verdict ?? "almost"). Tell the user naturally, in one short sentence: \(line)")
+        lastActivity = Date()
+        return true
+    }
+
+    /// Plays 24 kHz PCM16 (Core's `/api/cam/say`, same Gemini voice) through the Live player,
+    /// starting it if the coach isn't running (mic muted; stopped again once it's quiet).
+    func playSpeech(pcm24k: Data) async {
+        let audio = self.audio ?? LiveAudio()
+        self.audio = audio
+        if !audio.isRunning {
+            do { try await audio.start() } catch { return }
+            Self.tuneAudioRoute()
+        }
+        applyAudioMutes()
+        audio.enqueue(pcm24k: pcm24k)
+        guard live == nil else { return }
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            while audio.isPlaying { try? await Task.sleep(for: .milliseconds(250)) }
+            if let self, self.live == nil { audio.stop() }
+        }
     }
 
     @ObservationIgnored weak var host: CoachHost?
@@ -121,7 +160,7 @@ final class CoachSession {
         frames.session = live
         let audio = self.audio ?? LiveAudio()
         self.audio = audio
-        audio.isOutputMuted = !voiceOn
+        applyAudioMutes()
         eventsTask = Task { [weak self] in
             for await e in live.events { self?.handle(e) }
         }
@@ -153,10 +192,37 @@ final class CoachSession {
     }
 
     private func startAudio(_ audio: LiveAudio) async {
-        do { try await audio.start() } catch {
+        do {
+            try await audio.start()
+            Self.tuneAudioRoute()
+        } catch {
             // No audio (e.g. simulator without input): the coach still sees, acts and captions.
             print("CoachCam: audio unavailable: \(error)")
         }
+    }
+
+    /// The mic key while live but the engine is down (start failed, or an interruption ended
+    /// without `shouldResume`). A full stop + start: `LiveAudio.start()` is a no-op while its core
+    /// still counts itself running, so starting again alone would not bring the mic back.
+    func restartAudio() async {
+        guard let audio, live != nil else { return }
+        audio.stop()
+        await startAudio(audio)
+        applyAudioMutes()
+    }
+
+    /// After `LiveAudio` set up the session: Gemini plays on the loudspeaker (never the earpiece,
+    /// even if a route change landed there), and the drums' detent haptics keep ticking while
+    /// the mic records (iOS silences haptics during recording by default).
+    private static func tuneAudioRoute() {
+        let s = AVAudioSession.sharedInstance()
+        try? s.setAllowHapticsAndSystemSoundsDuringRecording(true)
+        if s.currentRoute.outputs.contains(where: { $0.portType == .builtInReceiver }) {
+            try? s.overrideOutputAudioPort(.speaker)
+        }
+        #if DEBUG
+        print("CoachCam[audio] \(s.category.rawValue) \(s.mode.rawValue) in=\(s.currentRoute.inputs.map(\.portType.rawValue)) out=\(s.currentRoute.outputs.map(\.portType.rawValue))")
+        #endif
     }
 
     func stop() {
@@ -257,7 +323,7 @@ final class CoachSession {
         }
         captionClear?.cancel()
         captionClear = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2.5))
+            try? await Task.sleep(for: .seconds(4))
             guard !Task.isCancelled else { return }
             self?.caption = nil
         }
@@ -267,7 +333,7 @@ final class CoachSession {
         let text = Self.spoken(raw)
         guard Self.isSpeech(text) else { return }      // "...", "-", "<no speech>" on quiet ticks
         captionClear?.cancel()
-        caption = Self.tail(text, words: 7)
+        caption = Self.tail(text, words: 18)
     }
 
     /// Drops transcription markup like `<no speech>` and `{pause}` (also while half-received).
@@ -281,7 +347,9 @@ final class CoachSession {
     }
 
     private func showHeard(_ text: String) {
-        heard = Self.tail(text, words: 8)
+        heard = Self.tail(text, words: 10)
+        let full = Self.spoken(text).trimmingCharacters(in: .whitespacesAndNewlines)
+        if Self.isSpeech(full) { lastHeard = String(full.suffix(200)) }
         heardClear?.cancel()
         heardClear = Task { [weak self] in
             try? await Task.sleep(for: .seconds(3))
@@ -365,7 +433,8 @@ final class CoachSession {
             if settle > 0 { try? await Task.sleep(for: .seconds(settle)) }
             lastCoachPhoto = Date()
             let result = await host?.coachTakePhoto(reason: reason) ?? ["ok": false, "error": "no camera"]
-            respond(call, result, .whenIdle)
+            // When the app reads its own review aloud, the coach stays quiet about the photo.
+            respond(call, result, (result["review"] as? Bool) == true ? .silent : .whenIdle)
         }
     }
 
@@ -504,6 +573,11 @@ final class CoachSession {
         turnText = text
         showCaption(text)
         endTurn()
+    }
+
+    /// Demo/QA: show the user's words as if transcribed.
+    func debugHeard(_ text: String) {
+        showHeard(text)
     }
 
     /// QA: send a typed user turn (launch argument `-coachPrompt`).

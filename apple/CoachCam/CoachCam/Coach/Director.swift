@@ -69,6 +69,8 @@ final class Director {
             let d = try await client.director(jpeg: frame.jpeg, state: body)
             guard !Task.isCancelled else { return false }
             latest = d
+            SubjectTracker.shared.direct(FrameTargetInput(subjectBox: d.subjectBox, targetBox: d.targetBox,
+                                                          levelDeg: d.levelDeg, horizon: d.intent == "landscape"))
             latestStartedAt = now
             count += 1
             onAnswer?(d, now)

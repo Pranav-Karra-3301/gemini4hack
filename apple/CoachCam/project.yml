@@ -35,6 +35,8 @@ targets:
         product: CoachLive
       - package: CoachKit
         product: CoachUI
+      - package: CoachKit
+        product: CoachEdit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.coach.cam

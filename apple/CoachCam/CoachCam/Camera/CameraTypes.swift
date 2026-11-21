@@ -31,6 +31,8 @@ struct CameraSnapshot: Equatable, Sendable {
     var zoomRange: ClosedRange<Double> = 0.5...10
     /// Display zoom of each available lens (ultrawide 0.5, wide 1, tele 3/5).
     var lenses: [CameraLens: Double] = [.wide: 1]
+    /// Closest focus distance of the active lens, metres (AVCaptureDevice.minimumFocusDistance).
+    var minFocus: Double = 0.2
 
     var mode: CaptureMode = .photo
     var flash: FlashMode = .off
@@ -59,6 +61,27 @@ struct CameraSnapshot: Equatable, Sendable {
     }
 }
 
+/// Lens position (0 near … 1 far) ↔ focus distance in metres, for the focus ruler.
+/// AVFoundation exposes no calibrated distance, so this is a plausible stand-in: lens travel is
+/// roughly linear in dioptres, and position 0 sits at the lens's closest focus distance.
+/// Positions within 3% of the far end read as ∞.
+enum FocusDistance {
+    static let curve = 1.5
+
+    static func metres(lensPosition lp: Double, minFocus: Double) -> Double {
+        let far = 1 - min(max(lp, 0), 1)
+        guard far > 0.03 else { return .infinity }
+        let dioptres = pow(far, curve) / max(minFocus, 0.02)
+        return 1 / dioptres
+    }
+
+    static func lensPosition(metres m: Double, minFocus: Double) -> Double {
+        guard m.isFinite, m > 0 else { return 1 }
+        let far = pow(min(max(minFocus, 0.02) / m, 1), 1 / curve)
+        return min(max(1 - far, 0), 1)
+    }
+}
+
 enum ShutterText {
     /// 0.008 → "1/125", 0.5 → "0.5s".
     static func fraction(_ s: Double) -> String {
@@ -68,8 +91,8 @@ enum ShutterText {
     }
 }
 
-/// A captured photo: the camera's own file (HEIF, with depth in portrait) for Photos, and a
-/// JPEG for Core.
+/// A captured photo: the camera's own file (HEIF, with embedded depth when the camera has it) for
+/// Photos, and a JPEG for Core (the JPEG drops the depth).
 struct CapturedPhoto: Sendable {
     var fileData: Data
     var jpeg: Data
@@ -79,6 +102,9 @@ struct CapturedPhoto: Sendable {
     var shutter: Double?
     var hasDepth: Bool
     var thumbnail: CGImage?
+    /// The photo's depth, upright, as Core's `depth.png` (16-bit mm, 0 = unknown); nil without depth.
+    /// Load with `EditRenderer.depthImage(pngData:)`.
+    var depthPNG: Data? = nil
 }
 
 /// Receives preview frames on the camera's video queue (≈30 fps; the sink throttles to ≤1 fps).

@@ -11,7 +11,7 @@ struct SettingsSheet: View {
         NavigationStack {
             Form {
                 Section("Mac") {
-                    LabeledContent("Coach Core", value: linkText)
+                    LabeledContent("Heliocam Core", value: linkText)
                     if let p = app.pairing {
                         LabeledContent("Address", value: "\(p.host):\(p.port)")
                     }
@@ -27,20 +27,20 @@ struct SettingsSheet: View {
                     }
                 }
                 Section {
-                    Toggle("Live coach", isOn: Binding(
+                    Toggle("Live coaching", isOn: Binding(
                         get: { app.coachEnabled },
                         set: { on in
                             app.coachEnabled = on
                             if on { Task { await app.startCoachIfReady() } } else { app.coach.stop() }
                         }))
-                    Toggle("Coach voice", isOn: $app.voiceOn)
+                    Toggle("Gemini voice", isOn: $app.voiceOn)
                     if let ms = app.coach.connectMs {
                         LabeledContent("Connect time", value: "\(ms) ms")
                     }
                 } header: {
-                    Text("Coach")
+                    Text("Heliocam")
                 } footer: {
-                    Text("With the voice off the coach still listens, moves the dials and shows captions.")
+                    Text("With the voice off the mic and Gemini's voice are muted; it still watches, guides with the border, shows tips as a yellow tag and moves the dials.")
                 }
                 Section {
                     Toggle("Save to Photos", isOn: $app.saveToPhotos)
@@ -53,7 +53,7 @@ struct SettingsSheet: View {
                 } header: {
                     Text("Shots")
                 } footer: {
-                    Text("Every shot is kept on the phone until Coach Core has it.")
+                    Text("Every shot is kept on the phone until Heliocam Core has it.")
                 }
             }
             .navigationTitle("Settings")
