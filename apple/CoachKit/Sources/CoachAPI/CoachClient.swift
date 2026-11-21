@@ -128,6 +128,18 @@ public actor CoachClient {
         try await multipartImage("/api/regions", jpeg: jpeg)
     }
 
+    /// `POST /api/cam/director`: multipart `frame` (one JPEG) plus `state` (a JSON object as text).
+    /// A second model looks at the frame and says what to do next.
+    public func director(jpeg: Data, state: [String: Any]) async throws -> Direction {
+        var form = MultipartForm()
+        form.addFile(name: "frame", filename: "frame.jpg", contentType: "image/jpeg", data: jpeg)
+        let stateJSON = try JSONSerialization.data(withJSONObject: state, options: [.sortedKeys])
+        form.addField(name: "state", value: String(decoding: stateJSON, as: UTF8.self))
+        var req = try request("/api/cam/director", method: "POST", timeout: 30)
+        req.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
+        return try await send(req, upload: form.body)
+    }
+
     // MARK: Events
 
     /// `GET /api/events` as typed events. Reconnects with exponential backoff (0.5 s → `maxBackoff`,
@@ -265,6 +277,68 @@ public actor CoachClient {
             return "\(path(c)): \(c.debugDescription)"
         @unknown default: return "\(e)"
         }
+    }
+}
+
+/// `POST /api/cam/director` answer. Every field is optional; unknown keys are ignored.
+public struct Direction: Decodable, Sendable, Equatable {
+    public var subject: String?
+    public var intent: String?
+    public var newShot: Bool?
+    public var score: Int?
+    public var issues: [String]?
+    /// left, right, up, down, closer, back, rotate_left, rotate_right, hold.
+    public var move: String?
+    /// small, medium, large.
+    public var strength: String?
+    /// photo, portrait, night, macro.
+    public var mode: String?
+    public var ready: Bool?
+    /// Where the subject is now: [x0, y0, x1, y1], 0…1 in the frame as sent (origin top-left).
+    public var subjectBox: [Double]?
+    /// Where the subject should be for a good composition, same format (bigger = get closer,
+    /// shifted = move it that way, same as `subjectBox` = hold).
+    public var targetBox: [Double]?
+    /// Roll error of the level lines in degrees (positive = turn the frame clockwise); nil = none.
+    public var levelDeg: Double?
+    public var tip: String?
+    public var model: String?
+    public var ms: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case subject, intent, score, issues, move, strength, mode, ready, tip, model, ms
+        case newShot = "new_shot"
+        case subjectBox = "subject_box"
+        case targetBox = "target_box"
+        case levelDeg = "level_deg"
+    }
+
+    public init(subject: String? = nil, intent: String? = nil, newShot: Bool? = nil, score: Int? = nil,
+                issues: [String]? = nil, move: String? = nil, strength: String? = nil, mode: String? = nil,
+                ready: Bool? = nil, subjectBox: [Double]? = nil, targetBox: [Double]? = nil,
+                levelDeg: Double? = nil, tip: String? = nil, model: String? = nil, ms: Int? = nil) {
+        self.subject = subject; self.intent = intent; self.newShot = newShot; self.score = score
+        self.issues = issues; self.move = move; self.strength = strength; self.mode = mode
+        self.ready = ready; self.subjectBox = subjectBox; self.targetBox = targetBox; self.levelDeg = levelDeg
+        self.tip = tip; self.model = model; self.ms = ms
+    }
+
+    /// Lenient: a field of the wrong type reads as nil instead of failing the whole answer.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func opt<T: Decodable>(_ k: CodingKeys) -> T? { (try? c.decodeIfPresent(T.self, forKey: k)) ?? nil }
+        subject = opt(.subject); intent = opt(.intent); newShot = opt(.newShot)
+        score = opt(.score) ?? (opt(.score) as Double?).map { Int($0.rounded()) }
+        issues = opt(.issues); move = opt(.move); strength = opt(.strength); mode = opt(.mode)
+        ready = opt(.ready); tip = opt(.tip); model = opt(.model)
+        subjectBox = Self.box(opt(.subjectBox)); targetBox = Self.box(opt(.targetBox)); levelDeg = opt(.levelDeg)
+        ms = opt(.ms) ?? (opt(.ms) as Double?).map { Int($0.rounded()) }
+    }
+
+    /// Four values inside 0…1 with x0 < x1 and y0 < y1, else nil.
+    static func box(_ b: [Double]?) -> [Double]? {
+        guard let b, b.count == 4, b.allSatisfy({ (0...1).contains($0) }), b[0] < b[2], b[1] < b[3] else { return nil }
+        return b
     }
 }
 

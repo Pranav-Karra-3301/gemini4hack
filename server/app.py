@@ -131,7 +131,7 @@ app = FastAPI(title="lighting-coach", lifespan=lifespan)
 
 # Optional feature routers: each module exposes `router` (an APIRouter). A broken or missing
 # module is logged and skipped so the rest of the API keeps working.
-for _mod in ("cam", "splat", "live_token", "looks", "review", "semantic", "stats", "shots"):  # specific routes before shots' catch-all
+for _mod in ("cam", "splat", "live_token", "looks", "review", "semantic", "stats", "autoedit", "shots"):  # specific routes before shots' catch-all
     try:
         app.include_router(importlib.import_module(_mod).router)
     except ModuleNotFoundError as exc:
