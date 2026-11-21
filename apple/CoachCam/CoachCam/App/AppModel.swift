@@ -299,6 +299,11 @@ final class AppModel: CoachHost {
 
     // MARK: CoachHost
 
+    var coachCamera: QuickCommands.Camera {
+        let c = camera.snapshot
+        return QuickCommands.Camera(ev: c.ev, zoom: c.zoom, wbKelvin: c.wbKelvin)
+    }
+
     var coachStateLine: String {
         guard let m = subjectMetres else { return camera.snapshot.stateLine }
         return camera.snapshot.stateLine + String(format: ", subject_m %.1f", m)

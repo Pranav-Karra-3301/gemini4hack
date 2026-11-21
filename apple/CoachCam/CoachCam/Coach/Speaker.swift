@@ -22,9 +22,12 @@ final class Speaker: NSObject {
     static let commonLines = [
         "That's it. Take it.", "Take a step back.", "Come a little closer.", "Switch to portrait.",
         "A little to the left.", "A little to the right.", "Hold it there.",
+        "Darker.", "Brighter.", "Zooming in.", "Zooming out.", "Warmer.", "Cooler.", "Got it.",
     ]
+    /// Gemini audio plays a touch quicker than recorded: the voice sounded slow.
+    static let playbackRate: Float = 1.15
     /// How long a line waits for Gemini audio before the system voice says it.
-    private static let deadline: Duration = .milliseconds(1500)
+    private static let deadline: Duration = .milliseconds(900)
     private static let maxCached = 64
 
     private let synth = AVSpeechSynthesizer()
@@ -145,6 +148,8 @@ final class Speaker: NSObject {
     private func play(_ wav: Data, _ line: String) {
         do {
             let p = try AVAudioPlayer(data: wav)
+            p.enableRate = true
+            p.rate = Self.playbackRate
             p.prepareToPlay()
             guard p.play() else { throw CocoaError(.featureUnsupported) }
             player = p
@@ -157,7 +162,7 @@ final class Speaker: NSObject {
     private func speakLocally(_ line: String) {
         let utterance = AVSpeechUtterance(string: line)
         utterance.voice = voice
-        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.05
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 1.12
         utterance.prefersAssistiveTechnologySettings = false
         synth.speak(utterance)
     }
