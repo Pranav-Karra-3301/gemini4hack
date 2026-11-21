@@ -57,6 +57,9 @@ final class AppModel: CoachHost {
     /// Who made the last change (Gemini's play the rolling animation).
     private(set) var drumActor: CoachActor = .user
     private(set) var rulerActor: CoachActor = .user
+    /// Display zoom on the zoom ruler (0.5 = ultra-wide, 1 = wide).
+    private(set) var zoom: Double = 1
+    private(set) var zoomActor: CoachActor = .user
 
     var coachEnabled: Bool { didSet { defaults.set(coachEnabled, forKey: "coach.enabled") } }
     var voiceOn: Bool {
@@ -82,6 +85,7 @@ final class AppModel: CoachHost {
     @ObservationIgnored private var actorReset: Task<Void, Never>?
     @ObservationIgnored private var lastAutoRefresh = Date.distantPast
     @ObservationIgnored private var lastFocusWrite = Date.distantPast
+    @ObservationIgnored private var lastZoomWrite = Date.distantPast
 
     init() {
         defaults.register(defaults: ["coach.enabled": true, "coach.voice": true, "photos.save": true,
@@ -151,6 +155,8 @@ final class AppModel: CoachHost {
         if LaunchOptions.demoCoach { return }   // the scripted coach only
         #endif
         await coach.start()
+        // A shot opened while the coach was starting: the viewer owns the mic now.
+        if reveal.isShown { coach.stop(); return }
         #if DEBUG
         if let p = LaunchOptions.coachPrompt, coach.phase == .live {
             try? await Task.sleep(for: .seconds(2.5))   // let a frame or two arrive first
@@ -206,6 +212,10 @@ final class AppModel: CoachHost {
             }
             if refreshed { drumActor = .user; lastAutoRefresh = now }
         }
+        if zoomActor == .user, now.timeIntervalSince(lastZoomWrite) > 1, s.zoom > 0,
+           abs(log2(s.zoom / max(zoom, 0.01))) > 0.01 {
+            zoom = s.zoom
+        }
         if s.focusAuto, rulerActor == .user, now.timeIntervalSince(lastFocusWrite) > 1 {
             let m = FocusDistance.metres(lensPosition: s.focus, minFocus: s.minFocus)
             if abs(Self.ticks(m) - Self.ticks(focusMetres)) > 0.25 { focusMetres = m }
@@ -242,10 +252,13 @@ final class AppModel: CoachHost {
         coach.noteUserChange(key: "focus", text: m.isFinite ? String(format: "focus to %.1f m", m) : "focus to infinity")
     }
 
-    /// Pinch.
+    /// Pinch or a zoom ruler drag.
     func userZoom(_ z: Double) {
         let r = camera.snapshot.zoomRange
         let v = min(max(z, r.lowerBound), r.upperBound)
+        zoomActor = .user
+        zoom = v
+        lastZoomWrite = Date()
         camera.applyUser(CameraSettings(zoom: v))
         coach.noteUserChange(key: "zoom", text: String(format: "zoom to %.1fx", v))
     }
@@ -264,6 +277,7 @@ final class AppModel: CoachHost {
         if let n = a.iso { iso = n.number.map { .iso($0) } ?? .iso(s.iso.rounded(), auto: true) }
         if let n = a.shutter { shutter = n.number.map { .shutter($0) } ?? .shutter(s.shutter, auto: true) }
         if let v = a.ev { ev = .ev(v) }
+        if let z = a.zoom { zoomActor = actor; zoom = z }
         if let f = a.focus {
             if let lp = f.number {
                 rulerActor = actor
@@ -279,6 +293,7 @@ final class AppModel: CoachHost {
             guard !Task.isCancelled, let self else { return }
             self.drumActor = .user
             self.rulerActor = .user
+            self.zoomActor = .user
         }
     }
 
