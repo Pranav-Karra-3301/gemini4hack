@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Generate Northlight app icon SVG masters (iOS + macOS).
+"""Generate Northlight app icon SVG masters (iOS).
 
 Palette (strict): deep navy, Gemini blue #4C8DFF, iris #9A7CF6, star-white #F4F2FF,
 one amber star #FFB65C. No rainbow / thin-film colours.
 
 Writes to ../northlight/*.svg. All masters are 1024x1024.
 iOS masters are full-bleed; *-mask.svg variants bake in the continuous-corner
-(superellipse) mask for previews. macOS masters use a superellipse body on the
-1024 grid (824 body, ~185 corner) with a soft drop shadow.
+(superellipse) mask for previews.
 """
 import math
 import os
@@ -294,149 +293,6 @@ def ios_c():
     return "".join(d), "".join(b)
 
 
-# ---------------------------------------------------------------- macOS
-def mac_wrap(defs, inner):
-    body_d = squircle(512, 512, 412)
-    defs += (f'<clipPath id="body"><path d="{body_d}"/></clipPath>'
-             '<filter id="drop" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#000" flood-opacity=".34"/></filter>'
-             f'<linearGradient id="rimL" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{WHITE}" stop-opacity=".30"/>'
-             f'<stop offset=".35" stop-color="{WHITE}" stop-opacity=".04"/><stop offset="1" stop-color="{WHITE}" stop-opacity=".08"/></linearGradient>')
-    body = (f'<path d="{body_d}" fill="{NAVY_1}" filter="url(#drop)"/>'
-            f'<g clip-path="url(#body)">{inner}</g>'
-            f'<path d="{body_d}" fill="none" stroke="url(#rimL)" stroke-width="3"/>')
-    return defs, body
-
-
-def mac_console():
-    """Dark matte fader console at an angle; one slot glows blue-iris, a star above it."""
-    FL, FR, BL = (300, 812), (872, 684), (194, 600)
-    BR = (FR[0] + BL[0] - FL[0], FR[1] + BL[1] - FL[1])
-    T = 56
-
-    def P(u, v):
-        return (FL[0] + u*(FR[0]-FL[0]) + v*(BL[0]-FL[0]), FL[1] + u*(FR[1]-FL[1]) + v*(BL[1]-FL[1]))
-
-    def pts(seq):
-        return " ".join(f"{f(x)},{f(y)}" for x, y in seq)
-    lit_u = 0.68
-    top_end = P(lit_u, 0.9)
-    sx, sy = int(top_end[0]) + 8, 300
-    d = [f'<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset=".1" stop-color="{NAVY_0}"/>'
-         f'<stop offset=".45" stop-color="{NAVY_1}"/><stop offset=".72" stop-color="{BLUE}"/>'
-         f'<stop offset="1" stop-color="{IRIS}"/></linearGradient>',
-         '<linearGradient id="topF" gradientUnits="userSpaceOnUse" x1="560" y1="540" x2="520" y2="800">'
-         '<stop offset="0" stop-color="#262C4E"/><stop offset="1" stop-color="#13182E"/></linearGradient>',
-         '<linearGradient id="frontF" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#0A0D1E"/><stop offset="1" stop-color="#11152B"/></linearGradient>',
-         f'<linearGradient id="capT" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{WHITE}"/><stop offset="1" stop-color="#B8BDD8"/></linearGradient>',
-         bi_grad("slotG", *P(lit_u, 0.1), *P(lit_u, 0.9), BLUE, IRIS),
-         bi_grad("ringG", sx - 70, sy - 70, sx + 70, sy + 70),
-         f'<clipPath id="slabTop"><polygon points="{pts([FL, FR, BR, BL])}"/></clipPath>']
-    b = ['<rect x="100" y="100" width="824" height="824" fill="url(#sky)"/>']
-    b.append(bg_stars(3, 8, avoid=((sx, sy, 170),), box=(140, 140, 884, 520)))
-    b.append(amber_star(250, 280, 10))
-    b.append(six_ray_star(sx, sy, core=32, main_len=230, diag_len=180, w=6.5, ring_r=62, glow_r=320))
-    b.append(f'<line x1="{sx}" y1="{sy+74}" x2="{f(top_end[0])}" y2="{f(top_end[1]-12)}" stroke="{WHITE}" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="0.1 15" opacity=".65"/>')
-    cxm = (FL[0] + FR[0] + BL[0] + BR[0]) / 4
-    b.append(f'<ellipse cx="{f(cxm+30)}" cy="800" rx="360" ry="70" fill="#020414" opacity=".7" filter="url(#b30)"/>')
-    FLd, FRd, BLd = (FL[0], FL[1]+T), (FR[0], FR[1]+T), (BL[0], BL[1]+T)
-    b.append(f'<polygon points="{pts([BL, FL, FLd, BLd])}" fill="#070915" stroke="#070915" stroke-width="22" stroke-linejoin="round"/>')
-    b.append(f'<polygon points="{pts([FL, FR, FRd, FLd])}" fill="url(#frontF)" stroke="#0D1024" stroke-width="22" stroke-linejoin="round"/>')
-    b.append(f'<polygon points="{pts([FL, FR, BR, BL])}" fill="url(#topF)" stroke="url(#topF)" stroke-width="22" stroke-linejoin="round"/>')
-    b.append(f'<polyline points="{pts([BL, BR])}" fill="none" stroke="{IRIS}" stroke-width="3" stroke-linecap="round" opacity=".7" transform="translate(0 -10)"/>')
-    b.append(f'<line x1="{FL[0]}" y1="{FL[1]+11}" x2="{FR[0]}" y2="{FR[1]+11}" stroke="{WHITE}" stroke-width="2" opacity=".14"/>')
-    sp = P(lit_u, 0.62)
-    b.append(f'<g clip-path="url(#slabTop)"><ellipse cx="{f(sp[0])}" cy="{f(sp[1])}" rx="170" ry="130" fill="{IRIS}" opacity=".38" filter="url(#b30)"/></g>')
-    us = [0.16, 0.32, 0.50, lit_u, 0.84]
-    caps = [0.36, 0.58, 0.28, 0.80, 0.50]
-    for u, cv in zip(us, caps):
-        lit = abs(u - lit_u) < 1e-6
-        p0, p1 = P(u, 0.1), P(u, 0.9)
-        if lit:
-            ticks = []
-            for j in range(9):
-                v = 0.1 + j * 0.1
-                a0, a1 = P(u - 0.045, v), P(u - (0.075 if j % 4 == 0 else 0.06), v)
-                ticks.append(f"M{f(a0[0])} {f(a0[1])}L{f(a1[0])} {f(a1[1])}")
-            b.append(f'<path d="{"".join(ticks)}" stroke="{WHITE}" stroke-width="2" opacity=".35"/>')
-            b.append(f'<line x1="{f(p0[0])}" y1="{f(p0[1])}" x2="{f(p1[0])}" y2="{f(p1[1])}" stroke="url(#slotG)" stroke-width="56" stroke-linecap="round" opacity="1" filter="url(#b18)"/>')
-            b.append(f'<line x1="{f(p0[0])}" y1="{f(p0[1])}" x2="{f(p1[0])}" y2="{f(p1[1])}" stroke="url(#slotG)" stroke-width="13" stroke-linecap="round"/>')
-            b.append(f'<line x1="{f(p0[0])}" y1="{f(p0[1])}" x2="{f(p1[0])}" y2="{f(p1[1])}" stroke="{WHITE}" stroke-width="5" stroke-linecap="round" opacity=".9"/>')
-        else:
-            b.append(f'<line x1="{f(p0[0])}" y1="{f(p0[1])}" x2="{f(p1[0])}" y2="{f(p1[1])}" stroke="#04050B" stroke-width="13" stroke-linecap="round"/>')
-        hw, hd = 0.055, 0.045
-        c = [P(u - hw, cv - hd), P(u + hw, cv - hd), P(u + hw, cv + hd), P(u - hw, cv + hd)]
-        ch = 22
-        front = [c[0], c[1], (c[1][0], c[1][1] + ch), (c[0][0], c[0][1] + ch)]
-        side = [c[3], c[0], (c[0][0], c[0][1] + ch), (c[3][0], c[3][1] + ch)]
-        sidec, frontc = ("#B9A8FF", "#DCD3FF") if lit else ("#4E5472", "#7E84A2")
-        b.append(f'<ellipse cx="{f((c[0][0]+c[2][0])/2+6)}" cy="{f((c[0][1]+c[2][1])/2+18)}" rx="44" ry="18" fill="#000" opacity=".45" filter="url(#b10)"/>')
-        b.append(f'<polygon points="{pts(side)}" fill="{sidec}" stroke="{sidec}" stroke-width="6" stroke-linejoin="round"/>')
-        b.append(f'<polygon points="{pts(front)}" fill="{frontc}" stroke="{frontc}" stroke-width="6" stroke-linejoin="round"/>')
-        b.append(f'<polygon points="{pts(c)}" fill="{"#FFFFFF" if lit else "url(#capT)"}" stroke="{"#FFFFFF" if lit else "#C9CCE4"}" stroke-width="6" stroke-linejoin="round"/>')
-        mid0, mid1 = lerp(c[0], c[3], .5), lerp(c[1], c[2], .5)
-        b.append(f'<line x1="{f(mid0[0])}" y1="{f(mid0[1])}" x2="{f(mid1[0])}" y2="{f(mid1[1])}" stroke="{IRIS if lit else "#454B68"}" stroke-width="3" stroke-linecap="round"/>')
-        if lit:
-            ccx, ccy = (c[0][0]+c[2][0])/2, (c[0][1]+c[2][1])/2
-            b.append(f'<circle cx="{f(ccx)}" cy="{f(ccy)}" r="70" fill="{BLUE}" opacity=".45" filter="url(#b18)"/>')
-    return mac_wrap("".join(d), "".join(b))
-
-
-def lerp(p, q, t):
-    return (p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t)
-
-
-def mac_frost():
-    """Frosted matte glass slab with the Gemini constellation lit inside it."""
-    tx, ty, rot = 500, 520, -8
-    pw, ph, pr = 452, 560, 70
-    d = [f'<linearGradient id="bg" gradientUnits="userSpaceOnUse" x1="140" y1="100" x2="880" y2="924">'
-         f'<stop offset="0" stop-color="{NAVY_0}"/><stop offset=".45" stop-color="{NAVY_1}"/>'
-         f'<stop offset=".8" stop-color="{BLUE}"/><stop offset="1" stop-color="{IRIS}"/></linearGradient>',
-         bi_grad("ringO", 140, 300, 900, 760, WHITE, IRIS),
-         bi_grad("ringG", -130, -230, -50, -150),
-         f'<linearGradient id="frost" x1="0" y1="0" x2="0.6" y2="1"><stop offset="0" stop-color="{WHITE}" stop-opacity=".30"/>'
-         f'<stop offset=".5" stop-color="{WHITE}" stop-opacity=".12"/><stop offset="1" stop-color="{WHITE}" stop-opacity=".06"/></linearGradient>',
-         f'<linearGradient id="edge" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="{WHITE}" stop-opacity=".9"/>'
-         f'<stop offset=".45" stop-color="{WHITE}" stop-opacity=".15"/><stop offset="1" stop-color="{WHITE}" stop-opacity=".45"/></linearGradient>',
-         f'<clipPath id="plate"><rect x="{-pw/2}" y="{-ph/2}" width="{pw}" height="{ph}" rx="{pr}" transform="translate({tx} {ty}) rotate({rot})"/></clipPath>']
-    scene = (f'<g transform="rotate(-16 512 560)"><ellipse cx="512" cy="560" rx="400" ry="138" fill="none" stroke="url(#ringO)" stroke-width="40" opacity=".45" filter="url(#b18)"/>'
-             f'<ellipse cx="512" cy="560" rx="400" ry="138" fill="none" stroke="url(#ringO)" stroke-width="14"/></g>'
-             f'<circle cx="760" cy="300" r="240" fill="url(#starglow)"/>'
-             f'<circle cx="760" cy="300" r="26" fill="#FFFFFF"/>')
-    b = ['<rect x="100" y="100" width="824" height="824" fill="url(#bg)"/>']
-    b.append(bg_stars(9, 8, avoid=((760, 300, 140), (500, 520, 330)), box=(140, 140, 884, 884)))
-    b.append(scene)
-    b.append(f'<g transform="translate({tx+26} {ty+40}) rotate({rot})"><rect x="{-pw/2}" y="{-ph/2}" width="{pw}" height="{ph}" rx="{pr}" fill="#020418" opacity=".55" filter="url(#b30)"/></g>')
-    b.append(f'<g transform="translate({tx+10} {ty+16}) rotate({rot})"><rect x="{-pw/2}" y="{-ph/2}" width="{pw}" height="{ph}" rx="{pr}" fill="{WHITE}" opacity=".38"/></g>')
-    b.append(f'<g clip-path="url(#plate)"><rect x="100" y="100" width="824" height="824" fill="url(#bg)"/>'
-             f'<g filter="url(#b26)">{scene}</g>'
-             f'<rect width="{W}" height="{W}" fill="{WHITE}" opacity=".10"/></g>')
-    p = [f'<g transform="translate({tx} {ty}) rotate({rot})">']
-    p.append(f'<rect x="{-pw/2}" y="{-ph/2}" width="{pw}" height="{ph}" rx="{pr}" fill="url(#frost)"/>')
-    stars = {
-        "castor": (-92, -190), "c2": (-104, -62), "c3": (-122, 62), "c4": (-146, 188),
-        "pollux": (74, -160), "p2": (62, -40), "p3": (84, 84), "p4": (112, 200),
-        "ca": (-176, -100), "pa": (152, -78), "pb": (160, 110),
-    }
-    edges = [("castor", "c2"), ("c2", "c3"), ("c3", "c4"), ("pollux", "p2"), ("p2", "p3"), ("p3", "p4"),
-             ("castor", "pollux"), ("c2", "p2"), ("c2", "ca"), ("p2", "pa"), ("p3", "pb")]
-    ed = "".join(f"M{stars[a][0]} {stars[a][1]}L{stars[c][0]} {stars[c][1]}" for a, c in edges)
-    p.append(f'<path d="{ed}" stroke="{IRIS}" stroke-width="22" stroke-linecap="round" opacity=".55" filter="url(#b10)"/>')
-    p.append(f'<path d="{ed}" stroke="{WHITE}" stroke-width="7" stroke-linecap="round"/>')
-    for name, (x, y) in stars.items():
-        if name == "pollux":
-            p.append(amber_star(x, y, 17))
-            continue
-        r = 16 if name == "castor" else (11 if name in ("c2", "p2", "c3", "p3") else 9)
-        p.append(f'<circle cx="{x}" cy="{y}" r="{r*2.6}" fill="{WHITE}" opacity=".45" filter="url(#b10)"/>'
-                 f'<circle cx="{x}" cy="{y}" r="{r}" fill="#FFFFFF"/>')
-    p.append(f'<circle cx="{stars["castor"][0]}" cy="{stars["castor"][1]}" r="34" fill="none" stroke="url(#ringG)" stroke-width="5"/>')
-    p.append(f'<rect x="{-pw/2}" y="{-ph/2}" width="{pw}" height="{ph}" rx="{pr}" fill="none" stroke="url(#edge)" stroke-width="3"/>')
-    p.append('</g>')
-    b.append("".join(p))
-    return mac_wrap("".join(d), "".join(b))
-
-
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     for old in os.listdir(OUT):
@@ -454,6 +310,4 @@ if __name__ == "__main__":
     for name, (defs, body) in ios.items():
         write(f"{name}.svg", svg(defs, body))
         write(f"{name}-mask.svg", svg(defs, body, mask=True))
-    for name, (defs, body) in {"mac-1-console": mac_console(), "mac-2-frost": mac_frost()}.items():
-        write(f"{name}.svg", svg(defs, body))
     print("\n".join(sorted(os.listdir(OUT))))

@@ -9,7 +9,7 @@ step. The package is 51 MB, gitignored, and lives at
 ## Get the model
 
 ```bash
-server/.venv/bin/python -I tools/depthpro2_coreml/fetch.py
+uv run tools/depthpro2_coreml/fetch.py
 cd apple/CoachCam && xcodegen generate
 ```
 
@@ -28,11 +28,13 @@ cd apple/CoachCam && xcodegen generate
 
 ## Parity with PyTorch
 
-`parity.py` compares the Core ML model with the PyTorch model (`depth_pro_2`, as on the server)
+`parity.py` compares the Core ML model with the PyTorch model (`depth_pro_2`)
 on one photo:
 
 ```bash
-server/.venv/bin/python -I tools/depthpro2_coreml/parity.py torch PHOTO.jpg /tmp/dp2-ref.npz
+uv run --python 3.12 --with torch --with numpy --with pillow \
+  --with "depth-pro-2 @ git+https://github.com/apple-aiml-research/ml-depth-pro-2" \
+  python -I tools/depthpro2_coreml/parity.py torch PHOTO.jpg /tmp/dp2-ref.npz
 python -I tools/depthpro2_coreml/parity.py coreml /tmp/dp2-ref.npz \
   apple/CoachCam/CoachCam/Resources/Models/DepthPro2S.mlpackage   # needs coremltools
 ```
