@@ -368,6 +368,7 @@ struct DrumFace: View {
                 .tracking(1.4)
                 .foregroundStyle(GXColor.label)
                 .fixedSize()
+                .instrumentGlyphTurn()
                 .frame(height: 12)
                 .offset(x: 12, y: 12)
             strip(glow: glow)
@@ -391,6 +392,7 @@ struct DrumFace: View {
                 .tracking(0.02 * 22)
                 .foregroundStyle(GXColor.frost)
                 .fixedSize()
+                .instrumentGlyphTurn()
                 .frame(width: size.width, height: 36)
         } else {
             let lo = max(0, Int((pos - 2.2).rounded(.up)))
@@ -442,6 +444,7 @@ struct DrumFace: View {
             }
         }
         .fixedSize()
+        .instrumentGlyphTurn()
         .scaleEffect(scale)
         .opacity(opacity)
         .offset(x: x + shift)

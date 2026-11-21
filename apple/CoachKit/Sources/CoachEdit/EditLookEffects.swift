@@ -195,8 +195,9 @@ extension EditRenderer {
             .settingAlphaOne(in: e)
         let mean = 0.5 * (1 + w)
         // Unit-std noise per channel, then film.py's mono/chroma mix:
-        // out_c = 0.35r·n_c + (1 − 0.7r)/3 · Σ n_j, scaled to the soft-light offset around 0.5.
-        let k = amount * 0.055 * grainSoftLightGain / (sd1 * (1 + 0.36 * r * r).squareRoot())
+        // out_c = 0.35r·n_c + (1 − 0.7r)/3 · Σ n_j. Stored as 0.5 + 0.1·n so the cached texture
+        // doesn't depend on amount or strength (a strength drag reuses it).
+        let k = 0.1 / (sd1 * (1 + 0.36 * r * r).squareRoot())
         let diag = 0.35 * r, off = (1 - 0.7 * r) / 3
         let rowSum = diag + 3 * off
         func row(_ c: Int) -> CIVector {
@@ -204,11 +205,18 @@ extension EditRenderer {
                      z: k * (off + (c == 2 ? diag : 0)), w: 0)
         }
         let bias = 0.5 - k * mean * rowSum
-        let noise = sum.applyingFilter("CIColorMatrix", parameters: [
+        let unit = sum.applyingFilter("CIColorMatrix", parameters: [
             "inputRVector": row(0), "inputGVector": row(1), "inputBVector": row(2),
             "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
             "inputBiasVector": CIVector(x: bias, y: bias, z: bias, w: 0),
-        ]).insertingIntermediate(cache: true) // independent of the photo: reused while sliders move
+        ]).insertingIntermediate(cache: max(e.width, e.height) <= 2560) // preview: reused every frame
+        // Soft-light layer: 0.5 + d, d = n · amount · 0.055 · gain.
+        let a = 10 * amount * 0.055 * grainSoftLightGain
+        let noise = unit.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: a, y: 0, z: 0, w: 0), "inputGVector": CIVector(x: 0, y: a, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: a, w: 0), "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+            "inputBiasVector": CIVector(x: 0.5 - 0.5 * a, y: 0.5 - 0.5 * a, z: 0.5 - 0.5 * a, w: 0),
+        ])
         return noise
             .applyingFilter("CISoftLightBlendMode", parameters: [
                 kCIInputBackgroundImageKey: img.applyingFilter("CILinearToSRGBToneCurve"),

@@ -17,9 +17,6 @@ enum LaunchOptions {
         #endif
     }
     #if DEBUG
-    /// `-coreURL http://127.0.0.1:8797` (with optional `-coreToken`): skip pairing.
-    static var coreURL: String? { UserDefaults.standard.string(forKey: "coreURL") }
-    static var coreToken: String? { UserDefaults.standard.string(forKey: "coreToken") }
     /// `-demoCoach YES`: play scripted tool calls (no Gemini) to show the dials moving.
     static var demoCoach: Bool { UserDefaults.standard.bool(forKey: "demoCoach") }
     /// `-coachPrompt "…"`: typed user turn sent once Live is up (QA without a mic).
@@ -27,30 +24,39 @@ enum LaunchOptions {
     #endif
 }
 
-/// App state: pairing with Core, the camera, the dials, the coach and sync.
+/// App state: the camera, the instruments, the coach, the local roll and the shot viewer.
+/// Standalone: every Gemini call goes straight from the phone (GeminiDirect).
 @MainActor
 @Observable
 final class AppModel: CoachHost {
-    enum Link: Equatable {
-        case unpaired, checking, online
-        case offline(String)
-        case unauthorized
-    }
-
     let camera: CameraController
-    let controls = CameraControlsModel(parameters: CameraParameter.stripDefault)
     let coach = CoachSession()
-    let sync = SyncModel()
+    /// Every shot, kept in the app's documents (the roll).
+    let shots = ShotStore()
+    let reveal = RevealModel()
+    /// Hold-to-talk edits of the open shot (on-device speech → Gemini → faders).
+    let voice = VoiceEdit()
 
-    private(set) var pairing: Pairing?
-    private(set) var link: Link = .unpaired
     private(set) var capturing = false
     /// Bumps on each capture (viewfinder blink).
     private(set) var shutterCount = 0
-    /// Readout values the coach just changed (shown in safelight for 600 ms).
-    private(set) var coachTouched: Set<CameraParameter> = []
-    var showPairing = false
     var showSettings = false
+    /// The gallery (the roll button next to the shutter).
+    var showRoll = false
+    /// The 3D exploded depth view of the open shot (#34).
+    var explode: ExplodeItem?
+
+    // MARK: Instruments (v2 drums + focus ruler)
+
+    /// What the ISO / SS / EV drums show. User drags arrive through `userSet(_:)`.
+    private(set) var iso: InstrumentValue = .iso(100, auto: true)
+    private(set) var shutter: InstrumentValue = .shutter(1.0 / 120, auto: true)
+    private(set) var ev: InstrumentValue = .ev(0)
+    /// Focus distance on the ruler (metres, `.infinity` for ∞).
+    private(set) var focusMetres: Double = 1.2
+    /// Who made the last change (Gemini's play the rolling animation).
+    private(set) var drumActor: CoachActor = .user
+    private(set) var rulerActor: CoachActor = .user
 
     var coachEnabled: Bool { didSet { defaults.set(coachEnabled, forKey: "coach.enabled") } }
     var voiceOn: Bool {
@@ -61,12 +67,10 @@ final class AppModel: CoachHost {
     }
     var saveToPhotos: Bool { didSet { defaults.set(saveToPhotos, forKey: "photos.save") } }
 
-    @ObservationIgnored private(set) var client: CoachClient?
-    @ObservationIgnored private let store = PairingStore()
     @ObservationIgnored private let defaults = UserDefaults.standard
-    @ObservationIgnored private var lastRanges: [CameraParameter: ClosedRange<Double>] = [:]
-    @ObservationIgnored private var touchClear: Task<Void, Never>?
-    @ObservationIgnored private var connecting = false
+    @ObservationIgnored private var actorReset: Task<Void, Never>?
+    @ObservationIgnored private var lastAutoRefresh = Date.distantPast
+    @ObservationIgnored private var lastFocusWrite = Date.distantPast
 
     init() {
         defaults.register(defaults: ["coach.enabled": true, "coach.voice": true, "photos.save": true])
@@ -76,26 +80,33 @@ final class AppModel: CoachHost {
         camera = CameraController(mock: LaunchOptions.mockCamera)
         coach.voiceOn = voiceOn
         coach.host = self
-        camera.engine.frameSink = coach.frames
-        camera.onSnapshot = { [weak self] s in self?.syncDials(s) }
-        controls.onUserChange = { [weak self] p, s in self?.userChanged(p, s) }
-        sync.clientProvider = { [weak self] in self?.link == .online ? self?.client : nil }
-        sync.onUnauthorized = { [weak self] in
-            self?.link = .unauthorized
-            self?.showPairing = true
+        camera.engine.frameSink = FrameSinks([coach.frames, SubjectTracker.shared])
+        camera.onSnapshot = { [weak self] s in self?.syncInstruments(s) }
+        reveal.speaker = { [weak self] line in
+            guard self?.voiceOn == true else { return }
+            Speaker.shared.say(line)
         }
-        sync.onNetworkBack = { [weak self] in
-            guard let self, case .offline = self.link else { return }
-            Task { await self.connect() }
+        RevealModel.localDepthPNG = { PhotoDepth.depthPNGmm(fromPhotoData: $0) }
+        voice.onRelease = { [weak self] wav in self?.reveal.voiceReleased(wav: wav) }
+        voice.onText = { [weak self] text in self?.reveal.voiceEdit(text) }
+        // The shot viewer pauses the camera coach (Live frames, ticks, director) so it never talks
+        // about the camera behind the photo; a new shot or dismiss ends voice edit on the old one.
+        reveal.onPresent = { [weak self] shown in
+            guard let self else { return }
+            if self.voice.isListening { self.voice.cancel() }
+            if shown { self.coach.stop() } else { Task { await self.startCoachIfReady() } }
+        }
+        reveal.onShow3D = { [weak self] photo, depth in
+            guard let cg = photo.cgImage else { return }
+            self?.explode = ExplodeItem(photo: cg, depthPNG: depth)
         }
     }
 
     // MARK: Lifecycle
 
     func launch() async {
-        async let cam: Void = camera.start()
-        await connect()
-        await cam
+        await camera.start()
+        DepthPro2.warmUp()   // so the first shot already gets Depth Pro 2 depth
         #if DEBUG
         if LaunchOptions.demoCoach {
             await DemoScript.run(self)
@@ -110,9 +121,7 @@ final class AppModel: CoachHost {
         case .active:
             Task {
                 await camera.start()
-                if link != .online { await connect() }
                 await startCoachIfReady()
-                sync.kick()
             }
         case .background:
             coach.stop()
@@ -123,7 +132,10 @@ final class AppModel: CoachHost {
     }
 
     func startCoachIfReady() async {
-        guard coachEnabled, link == .online, camera.isRunning, !coach.isActive else { return }
+        guard coachEnabled, camera.isRunning, !coach.isActive, !reveal.isShown else { return }
+        #if DEBUG
+        if LaunchOptions.demoCoach { return }   // the scripted coach only
+        #endif
         await coach.start()
         #if DEBUG
         if let p = LaunchOptions.coachPrompt, coach.phase == .live {
@@ -133,204 +145,136 @@ final class AppModel: CoachHost {
         #endif
     }
 
-    /// Status pill tap: pair, reconnect, or pause/resume the coach.
+    /// Live dot tap: pause or resume the coach.
     func statusTapped() {
-        switch link {
-        case .unpaired, .unauthorized: showPairing = true
-        case .offline, .checking: Task { await connect(); await startCoachIfReady() }
-        case .online:
-            if coach.isActive {
-                coach.stop()
-                coachEnabled = false
-            } else {
-                coachEnabled = true
-                Task { await startCoachIfReady() }
-            }
+        if coach.isActive {
+            coach.stop()
+            coachEnabled = false
+        } else {
+            coachEnabled = true
+            Task { await startCoachIfReady() }
         }
     }
 
-    // MARK: Pairing
+    /// Opens a shot from the gallery in the shot viewer.
+    func open(_ shot: LocalShot) {
+        guard let jpeg = try? Data(contentsOf: shot.jpegURL) else { return }
+        let file = shot.fileURL.flatMap { try? Data(contentsOf: $0) }
+        reveal.begin(jpeg: jpeg, photoData: file)
+    }
 
-    /// Checks the saved pairing; if the Mac moved to a new IP, finds it again over Bonjour.
-    func connect() async {
-        guard !connecting else { return }
-        connecting = true
-        defer { connecting = false }
-        var saved = store.load()
-        #if DEBUG
-        if let url = LaunchOptions.coreURL, let p = Pairing(address: url, token: LaunchOptions.coreToken) { saved = p }
-        #endif
-        guard let p = saved else {
-            link = .unpaired
-            #if DEBUG
-            if LaunchOptions.demoCoach { return }
-            #endif
-            showPairing = true
+    /// The mic key: talk to Gemini. Starts the coach if it's off, else toggles voice mode.
+    func micTapped() {
+        if coach.phase == .live || coach.isActive {
+            voiceOn.toggle()
             return
         }
-        pairing = p
-        link = .checking
-        let c = CoachClient(pairing: p)
-        client = c
-        switch await Self.check(c) {
-        case .ok:
-            link = .online
-            sync.kick()
-        case .unauthorized:
-            link = .unauthorized
-            showPairing = true
-        case .failed(let message):
-            if let found = await CoachDiscovery().first(timeout: 4), found.host != p.host || found.port != p.port {
-                let moved = found.pairing(token: p.token)
-                let mc = CoachClient(pairing: moved)
-                if case .ok = await Self.check(mc) {
-                    store.updateAddress(host: moved.host, port: moved.port)
-                    pairing = moved
-                    client = mc
-                    link = .online
-                    sync.kick()
-                    return
-                }
+        voiceOn = true
+        coachEnabled = true
+        Task { await startCoachIfReady() }
+    }
+
+    // MARK: Camera ↔ instruments
+
+    /// Device truth → instruments. AUTO drums keep showing AUTO (their metered number only
+    /// refreshes on a big change, so the drum doesn't flicker); the ruler follows autofocus live.
+    private func syncInstruments(_ s: CameraSnapshot) {
+        let now = Date()
+        if now.timeIntervalSince(lastAutoRefresh) > 3 {
+            var refreshed = false
+            if iso.isAuto, s.isoAuto, abs(log2(max(s.iso, 1) / max(iso.number, 1))) > 1.5 {
+                iso = .iso(s.iso.rounded(), auto: true)
+                refreshed = true
             }
-            link = .offline(message)
-        }
-    }
-
-    /// Saves a pairing after checking it against Core. Returns an error message on failure.
-    func pair(_ p: Pairing) async -> String? {
-        let c = CoachClient(pairing: p)
-        switch await Self.check(c) {
-        case .ok:
-            do { try store.save(p) } catch { return "Couldn't save the pairing: \(error.localizedDescription)" }
-            coach.stop()
-            pairing = p
-            client = c
-            link = .online
-            showPairing = false
-            sync.kick()
-            await startCoachIfReady()
-            return nil
-        case .unauthorized:
-            return "Coach Core refused the code. Show a fresh QR on the Mac and scan again."
-        case .failed(let m):
-            return m
-        }
-    }
-
-    func forgetPairing() {
-        coach.stop()
-        store.clear()
-        pairing = nil
-        client = nil
-        link = .unpaired
-    }
-
-    enum Check { case ok, unauthorized, failed(String) }
-
-    /// `GET /api/health` with a 4 s cap (an unreachable LAN address otherwise hangs for a minute).
-    static func check(_ c: CoachClient) async -> Check {
-        await withTaskGroup(of: Check.self) { g in
-            g.addTask {
-                do { _ = try await c.health(); return .ok }
-                catch CoachError.unauthorized { return .unauthorized }
-                catch { return .failed(CoachSession.describe(error)) }
+            if shutter.isAuto, s.shutterAuto, abs(log2(max(s.shutter, 1e-6) / max(shutter.number, 1e-6))) > 1.5 {
+                shutter = .shutter(s.shutter, auto: true)
+                refreshed = true
             }
-            g.addTask {
-                try? await Task.sleep(for: .seconds(4))
-                return .failed("Coach Core at \(c.baseURL.host() ?? "?") didn't answer. Same Wi-Fi?")
-            }
-            let first = await g.next() ?? .failed("cancelled")
-            g.cancelAll()
-            return first
+            if refreshed { drumActor = .user; lastAutoRefresh = now }
+        }
+        if s.focusAuto, rulerActor == .user, now.timeIntervalSince(lastFocusWrite) > 1 {
+            let m = FocusDistance.metres(lensPosition: s.focus, minFocus: s.minFocus)
+            if abs(Self.ticks(m) - Self.ticks(focusMetres)) > 0.25 { focusMetres = m }
         }
     }
 
-    // MARK: Camera ↔ dials
+    /// Ruler position for a distance (minor ticks; 0 at ∞), to skip sub-tick autofocus jitter.
+    private static func ticks(_ m: Double) -> Double { m.isFinite ? -10 / max(m, 0.1) : 0 }
 
-    /// Device truth → dials: device ranges, and the metered value for dials in AUTO.
-    private func syncDials(_ s: CameraSnapshot) {
-        for (p, r) in [(CameraParameter.iso, s.isoRange), (.shutter, s.shutterRange), (.zoom, s.zoomRange), (.ev, s.evRange)]
-        where lastRanges[p] != r {
-            lastRanges[p] = r
-            controls.setRange(r, for: p)
+    /// A drum drag or double-tap (AUTO / EV 0).
+    func userSet(_ v: InstrumentValue) {
+        drumActor = .user
+        switch v.kind {
+        case .iso:
+            iso = v
+            camera.applyUser(CameraSettings(iso: v.isAuto ? .auto : .value(v.number)))
+        case .shutter:
+            shutter = v
+            camera.applyUser(CameraSettings(shutter: v.isAuto ? .auto : .value(v.number)))
+        case .ev:
+            ev = v
+            camera.applyUser(CameraSettings(ev: v.number))
         }
-        if s.isoAuto { controls.updateMetered(.iso, value: s.iso) }
-        if s.shutterAuto { controls.updateMetered(.shutter, value: s.shutter) }
-        if s.focusAuto { controls.updateMetered(.focus, value: s.focus) }
-        if s.wbAuto { controls.updateMetered(.whiteBalance, value: s.wbKelvin) }
+        coach.noteUserChange(key: v.kind.rawValue, text: "\(v.label) to \(v.text)")
     }
 
-    private func userChanged(_ p: CameraParameter, _ s: DialSetting) {
-        var c = CameraSettings()
-        let auto: (DialSetting) -> AutoNumber = { $0.isAuto ? .auto : .value($0.value ?? p.defaultValue) }
-        switch p {
-        case .iso: c.iso = auto(s)
-        case .shutter: c.shutter = auto(s)
-        case .focus: c.focus = auto(s)
-        case .whiteBalance: c.wbKelvin = auto(s)
-        case .ev: c.ev = s.value
-        case .tint: c.tint = s.value
-        case .zoom: c.zoom = s.value
-        }
-        camera.applyUser(c)
-        coach.noteUserChange(key: p.rawValue, text: "\(p.title) to \(p.format(s))")
+    /// A focus ruler drag.
+    func userSetFocus(_ m: Double) {
+        rulerActor = .user
+        focusMetres = m
+        lastFocusWrite = Date()
+        let lp = FocusDistance.lensPosition(metres: m, minFocus: camera.snapshot.minFocus)
+        camera.applyUser(CameraSettings(focus: .value(lp)))
+        coach.noteUserChange(key: "focus", text: m.isFinite ? String(format: "focus to %.1f m", m) : "focus to infinity")
     }
 
-    /// Pinch / lens buttons.
+    /// Pinch.
     func userZoom(_ z: Double) {
-        let r = controls.range(.zoom)
+        let r = camera.snapshot.zoomRange
         let v = min(max(z, r.lowerBound), r.upperBound)
-        controls.set(.zoom, to: .manual(v), animated: false)
         camera.applyUser(CameraSettings(zoom: v))
         coach.noteUserChange(key: "zoom", text: String(format: "zoom to %.1fx", v))
     }
 
-    func userMode(_ m: CaptureMode) {
-        Task {
-            let applied = await camera.apply(CameraSettings(mode: m))
-            showOnDials(applied)   // presets move dials too (in the user's colour, not the coach's)
-            coach.noteUserChange(key: "mode", text: "mode to \(m.rawValue)")
-        }
-    }
-
-    private func showOnDials(_ s: CameraSettings) {
-        func put(_ p: CameraParameter, _ n: AutoNumber?) {
-            guard let n else { return }
-            controls.set(p, to: n.isAuto ? .auto(metered: controls.setting(p).value) : .manual(n.number ?? p.defaultValue))
-        }
-        put(.iso, s.iso)
-        put(.shutter, s.shutter)
-        put(.focus, s.focus)
-        put(.whiteBalance, s.wbKelvin)
-        if let v = s.ev { controls.set(.ev, to: .manual(v)) }
-        if let v = s.zoom { controls.set(.zoom, to: .manual(v)) }
-    }
-
+    /// Tap to focus: continuous autofocus at that point; the ruler follows it.
     func userFocus(atUpright p: CGPoint) {
         camera.focus(atUpright: p)
-        if case .manual = controls.setting(.focus) { controls.set(.focus, to: .auto(metered: nil)) }
+        rulerActor = .user
+        lastFocusWrite = .distantPast
+    }
+
+    /// Shows what a `set_camera` actually applied, with Gemini's rolling animation.
+    private func showApplied(_ a: CameraSettings, by actor: CoachActor) {
+        let s = camera.snapshot
+        if a.iso != nil || a.shutter != nil || a.ev != nil { drumActor = actor }
+        if let n = a.iso { iso = n.number.map { .iso($0) } ?? .iso(s.iso.rounded(), auto: true) }
+        if let n = a.shutter { shutter = n.number.map { .shutter($0) } ?? .shutter(s.shutter, auto: true) }
+        if let v = a.ev { ev = .ev(v) }
+        if let f = a.focus {
+            if let lp = f.number {
+                rulerActor = actor
+                focusMetres = FocusDistance.metres(lensPosition: lp, minFocus: s.minFocus)
+            } else {
+                rulerActor = .user
+                lastFocusWrite = .distantPast
+            }
+        }
+        actorReset?.cancel()
+        actorReset = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.8))
+            guard !Task.isCancelled, let self else { return }
+            self.drumActor = .user
+            self.rulerActor = .user
+        }
     }
 
     // MARK: CoachHost
-
-    var coachClient: CoachClient? { link == .online ? client : nil }
 
     var coachStateLine: String { camera.snapshot.stateLine }
 
     func coachSetCamera(_ settings: CameraSettings) async -> CameraSettings {
         let applied = await camera.apply(settings)
-        controls.coachApply(applied)
-        var touched: Set<CameraParameter> = []
-        if applied.iso != nil { touched.insert(.iso) }
-        if applied.ev != nil { touched.insert(.ev) }
-        if applied.zoom != nil { touched.insert(.zoom) }
-        coachTouched = touched
-        touchClear?.cancel()
-        touchClear = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(600 + 620 * max(0, touched.count - 1)))
-            guard !Task.isCancelled else { return }
-            self?.coachTouched = []
-        }
+        showApplied(applied, by: .gemini)
         return applied
     }
 
@@ -346,26 +290,17 @@ final class AppModel: CoachHost {
         capturing = true
         defer { capturing = false }
         shutterCount += 1
-        let snap = camera.snapshot
         let t0 = Date()
         do {
             let photo = try await camera.capture()
-            let meta = ShotMeta(
-                source: "iphone", device: Self.deviceModel, takenAt: Self.iso8601.string(from: Date()),
-                iso: (photo.iso ?? snap.iso).rounded(), shutter: photo.shutter ?? snap.shutter,
-                ev: snap.ev, wbKelvin: snap.wbKelvin.rounded(), tint: snap.tint.rounded(),
-                lens: snap.lens.rawValue, zoom: (snap.zoom * 100).rounded() / 100, mode: snap.mode.rawValue,
-                focus: (snap.focus * 100).rounded() / 100, facing: "back", intent: coach.intent?.rawValue,
-                subject: coach.subject, keep: coach.subject.map { [$0] }, scene: nil,
-                coach: Array(coach.lines.suffix(6)))
+            // The shot lands in the roll (the thumbnail flies in); the viewer opens only from it.
+            shots.add(jpeg: photo.jpeg, file: photo.fileData, thumbnail: photo.thumbnail)
             if saveToPhotos {
                 let file = photo.fileData
                 Task.detached(priority: .utility) { await PhotoLibrarySaver.save(file) }
             }
-            await sync.enqueue(jpeg: photo.jpeg, meta: meta, thumbnail: photo.thumbnail)
             coach.photoTaken(byCoach: byCoach)
-            return ["ok": true, "capture_ms": Int(Date().timeIntervalSince(t0) * 1000),
-                    "synced": link == .online, "depth": photo.hasDepth]
+            return ["ok": true, "capture_ms": Int(Date().timeIntervalSince(t0) * 1000), "depth": photo.hasDepth]
         } catch {
             return ["ok": false, "error": CoachSession.describe(error)]
         }
@@ -386,4 +321,11 @@ final class AppModel: CoachHost {
         }
         return id.hasPrefix("iPhone") ? id : "iPhone (\(id))"
     }()
+}
+
+/// A shot shown in the 3D exploded depth view.
+struct ExplodeItem: Identifiable {
+    let id = UUID()
+    let photo: CGImage
+    let depthPNG: Data
 }

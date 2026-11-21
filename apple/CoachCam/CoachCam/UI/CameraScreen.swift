@@ -3,94 +3,155 @@ import CoachModels
 import CoachUI
 import SwiftUI
 
-/// The camera (DESIGN.md §4.1): full-bleed viewfinder, status + readout on top, the coach's intent,
-/// arrows and caption over the frame, then the dial strip, modes and the shutter row.
+/// The Heliocam camera (HANDOFF "iPhone camera"): a rounded viewfinder card whose own edge is
+/// the guide (EdgeGlow, no arrows or captions), then the instrument panel: ISO / SS / EV drums,
+/// the focus ruler, and the two keys (mic = talk to Gemini, lantern = shutter). Launch plays the
+/// wake-up opening; each shot plays flash → depth scan → thumbnail + check (`StageFX`).
 struct CameraScreen: View {
     @Environment(AppModel.self) private var app
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var focusMark: CGPoint?
-    @State private var focusMarkID = 0
-    @State private var pinchStart: Double?
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var fx = StageFX()
+    @State private var tilt = DeviceTilt()
+    @State private var suggestion = SuggestionFeed()
+    static let panelHeight: CGFloat = 252
 
     var body: some View {
         @Bindable var app = app
-        ZStack {
-            // Full-bleed layers (under the Dynamic Island and home indicator).
-            GeometryReader { geo in
-                ZStack {
-                    viewfinder(size: geo.size)
-                    Scrims().allowsHitTesting(false)
-                    ReactionWash(reaction: app.coach.reaction, id: app.coach.reactionID)
-                    ShutterBlink(count: app.shutterCount)
-                    if let p = focusMark {
-                        FocusMark().position(p).id(focusMarkID).allowsHitTesting(false)
-                    }
-                }
+        GeometryReader { geo in
+            let card = CGSize(width: geo.size.width - 16, height: max(200, geo.size.height - Self.panelHeight - 16))
+            VStack(spacing: 0) {
+                Viewfinder(size: card)
+                    .padding(8)
+                InstrumentPanel()
+                    .frame(height: Self.panelHeight)
             }
-            .ignoresSafeArea()
-            // Guidance zone (DESIGN.md: y 120–600 on a 852 pt phone), inside the safe area.
-            Group {
-                if app.coach.ready {
-                    ReadyBrackets()
-                        .padding(.horizontal, 20)
-                        .transition(.opacity.animation(CoachEase.out(CoachDuration.base)))
-                }
-                GuideArrow(app.coach.guide, strength: app.coach.guideStrength)
-            }
-            .padding(.top, 124)       // below the top bar and the intent chip
-            .padding(.bottom, 300)
-            overlay
         }
-        .background(CoachColor.ink)
-        .onAppear { app.controls.reduceMotion = reduceMotion }
-        .onChange(of: reduceMotion) { _, v in app.controls.reduceMotion = v }
-        .sheet(isPresented: $app.showPairing) { PairingSheet() }
+        .ignoresSafeArea()
+        .background { ZStack { GXColor.void; GrainOverlay() }.ignoresSafeArea() }
+        .overlay { if app.showRoll { Gallery().transition(.opacity) } }
+        .overlay { if app.reveal.isShown { ShotReveal(model: app.reveal, voice: app.voice).transition(.opacity) } }
+        .animation(.easeOut(duration: 0.2), value: app.reveal.isShown)
+        .animation(.easeOut(duration: 0.24), value: app.showRoll)
+        .environment(fx)
+        .environment(tilt)
+        .environment(suggestion)
+        .onAppear {
+            fx.wake(reduceMotion: reduceMotion)
+            tilt.start()
+        }
+        .onDisappear { tilt.stop() }
+        .onChange(of: scenePhase) { _, p in if p == .active { tilt.start() } else if p == .background { tilt.stop() } }
+        .onChange(of: app.coach.caption) { _, c in suggestion.feed(c) }
+        .onChange(of: app.shutterCount) { _, _ in
+            fx.shot(lastThumb: app.shots.lastThumb, mockFrame: app.camera.isMock ? app.camera.mockFrame : nil)
+        }
         .sheet(isPresented: $app.showSettings) { SettingsSheet() }
+        .fullScreenCover(item: $app.explode) { item in
+            DepthExplodeView(photo: item.photo, depthPNG: item.depthPNG)
+                .ignoresSafeArea()
+                .overlay(alignment: .topTrailing) {
+                    Button { app.explode = nil } label: {
+                        Image(systemName: "xmark").font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.8)).padding(14)
+                            .background(.white.opacity(0.08), in: Circle())
+                    }
+                    .padding(.top, 54).padding(.trailing, 18)
+                }
+        }
     }
+}
 
-    // MARK: Viewfinder
+// MARK: - Viewfinder card
 
-    @ViewBuilder
-    private func viewfinder(size: CGSize) -> some View {
-        Group {
-            if app.camera.isMock {
-                if let img = app.camera.mockFrame {
-                    Image(decorative: img, scale: 1)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: size.width, height: size.height)
-                        .clipped()
-                        .animation(CoachEase.out(CoachDuration.slow), value: app.camera.snapshot)
-                } else {
-                    CoachColor.graphite
+private struct Viewfinder: View {
+    @Environment(AppModel.self) private var app
+    @Environment(StageFX.self) private var fx
+    let size: CGSize
+    @State private var focusMark: CGPoint?
+    @State private var focusMarkID = 0
+    @State private var pinchStart: Double?
+    static let radius: CGFloat = 30
+
+    var body: some View {
+        ZStack {
+            GXColor.night
+            // The picture and everything painted on it open behind the 6-blade iris.
+            ZStack {
+                preview
+                    .frame(width: size.width, height: size.height)
+                    .contentShape(Rectangle())
+                    .onTapGesture(coordinateSpace: .local) { tapFocus($0) }
+                    .gesture(MagnifyGesture()
+                        .onChanged { v in
+                            let start = pinchStart ?? app.camera.snapshot.zoom
+                            pinchStart = start
+                            app.userZoom(start * v.magnification)
+                        }
+                        .onEnded { _ in pinchStart = nil })
+                FrameTargetOverlay(input: SubjectTracker.shared.input, tracked: SubjectTracker.shared.tracked)
+                    .frame(width: size.width, height: size.height)
+                    .allowsHitTesting(false)
+                Vignette(radius: Self.radius).allowsHitTesting(false)
+                ReactionWash(reaction: app.coach.reaction, id: app.coach.reactionID)
+                DepthScanSweep(progress: fx.scanProgress)
+                    .opacity(fx.scanOn ? 1 : 0)
+                CaptureFlash(trigger: fx.flashSerial)
+                if let p = focusMark {
+                    FocusMarkFlash().position(p).id(focusMarkID)
                 }
-            } else if let session = app.camera.avSession {
-                CameraPreview(session: session, device: app.camera.avDevice) { angle in
-                    app.camera.setCaptureRotation(angle)
-                }
-            } else {
-                CoachColor.ink
             }
+            .mask(IrisShape(open: fx.iris))
+            IrisBlades(open: fx.iris)
+                .stroke(GXColor.geminiHot.opacity(0.22), lineWidth: 1)
+                .opacity(1 - fx.iris)
+                .allowsHitTesting(false)
+            Text("Heliocam")
+                .font(GXFont.display(24))
+                .tracking(24 * 0.04)
+                .foregroundStyle(GXColor.frost)
+                .opacity(fx.wordmark)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+            if app.camera.denied { CameraDeniedNote() }
+            ViewfinderHUD()
         }
         .frame(width: size.width, height: size.height)
-        .overlay {
-            if app.camera.denied { CameraDeniedNote() }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture(coordinateSpace: .local) { loc in tapFocus(loc, size: size) }
-        .gesture(
-            MagnifyGesture()
-                .onChanged { v in
-                    let start = pinchStart ?? app.camera.snapshot.zoom
-                    pinchStart = start
-                    app.userZoom(start * v.magnification)
-                }
-                .onEnded { _ in pinchStart = nil }
-        )
+        .clipShape(RoundedRectangle(cornerRadius: Self.radius, style: .continuous))
+        .overlay(GuideGlow())
+        .overlay(
+            BorderSweep(progress: fx.sweep, cornerRadius: Self.radius)
+                .stroke(GXColor.geminiHot, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .shadow(color: GXColor.gemini, radius: 6)
+                .shadow(color: GXColor.gemini.opacity(0.8), radius: 2)
+                .opacity(fx.sweepOn)
+                .allowsHitTesting(false))
     }
 
-    /// Tap → focus/expose there. The preview is a 3:4 frame filling the screen (aspect fill).
-    private func tapFocus(_ loc: CGPoint, size: CGSize) {
+    @ViewBuilder
+    private var preview: some View {
+        if app.camera.isMock {
+            if let img = fx.frozen ? (fx.frozenMock ?? app.camera.mockFrame) : app.camera.mockFrame {
+                Image(decorative: img, scale: 1)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: size.width, height: size.height)
+                    .clipped()
+                    .animation(.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.42), value: app.camera.snapshot)
+            } else {
+                GXColor.night
+            }
+        } else if let session = app.camera.avSession {
+            FreezablePreview(session: session, device: app.camera.avDevice, frozen: fx.frozen) { angle in
+                app.camera.setCaptureRotation(angle)
+            }
+        } else {
+            GXColor.night
+        }
+    }
+
+    /// Tap → focus/expose there. The preview is a 3:4 frame filling the card (aspect fill).
+    private func tapFocus(_ loc: CGPoint) {
         let frameAspect: CGFloat = 3.0 / 4.0
         let fillW = max(size.width, size.height * frameAspect)
         let fillH = max(size.height, size.width / frameAspect)
@@ -100,406 +161,333 @@ struct CameraScreen: View {
         focusMark = loc
         focusMarkID += 1
     }
-
-    // MARK: Overlay
-
-    private var overlay: some View {
-        VStack(spacing: 0) {
-            TopBar()
-                .padding(.horizontal, 16)
-            if let intent = app.coach.intent {
-                IntentChip(intent: intent, subject: app.coach.subject, modeByCoach: app.coach.coachMode)
-                    .padding(.top, 14)
-                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
-            }
-            Spacer(minLength: 0)
-            CoachLine()
-                .padding(.horizontal, 28)
-                .padding(.bottom, 10)
-            CameraDialStrip(model: app.controls)
-                .padding(.horizontal, 12)
-            ModeSelector()
-                .padding(.top, 14)
-            ControlRow()
-                .padding(.horizontal, 36)
-                .padding(.top, 14)
-        }
-        .padding(.top, 2)
-        .padding(.bottom, 4)
-        .animation(CoachEase.out(CoachDuration.base), value: app.coach.intent)
-    }
 }
 
-// MARK: - Top bar
-
-private struct TopBar: View {
-    @Environment(AppModel.self) private var app
+/// The card's vignette: a soft elliptical falloff, an 80pt inner shadow and a 1px frost rim.
+private struct Vignette: View {
+    let radius: CGFloat
 
     var body: some View {
-        HStack(spacing: 10) {
-            StatusPill()
-            Spacer(minLength: 0)
-            ReadoutPill()
-            Spacer(minLength: 0)
-            Button { app.showSettings = true } label: {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(CoachColor.paper)
-                    .frame(width: 44, height: 44)
-                    .coachGlass(cornerRadius: 22)
-            }
-            .accessibilityLabel("Settings")
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        ZStack {
+            EllipticalGradient(stops: [.init(color: GXColor.void.opacity(0), location: 0.5),
+                                       .init(color: GXColor.void.opacity(0.55), location: 1)],
+                               center: UnitPoint(x: 0.5, y: 0.46), startRadiusFraction: 0, endRadiusFraction: 0.62)
+            shape.stroke(GXColor.void.opacity(0.5), lineWidth: 60).blur(radius: 36)
+            shape.strokeBorder(Color(red: 0.706, green: 0.808, blue: 1).opacity(0.10), lineWidth: 1)
         }
-        .frame(height: 44)
+        .clipShape(shape)
     }
 }
 
-private struct StatusPill: View {
+/// The guide: the viewfinder's own edge glows toward the move (`guide`), pulses once when the
+/// coach says hold (aligned), and carries the review's first card as a softer hint.
+private struct GuideGlow: View {
     @Environment(AppModel.self) private var app
+    @Environment(StageFX.self) private var fx
+    @Environment(DeviceTilt.self) private var tilt
 
     var body: some View {
-        let (label, color, glow) = state
-        Button { app.statusTapped() } label: {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(color)
-                    .frame(width: 8, height: 8)
-                    .shadow(color: glow ? color.opacity(0.9) : .clear, radius: 5)
-                    .overlay(Circle().stroke(color.opacity(glow ? 0.22 : 0), lineWidth: 3).scaleEffect(1.6))
-                Text(label)
-                    .font(CoachFont.label)
-                    .tracking(CoachFont.labelTracking(11))
-                    .foregroundStyle(CoachColor.paper)
-                    .lineLimit(1)
+        let (cue, k) = cue
+        EdgeGlow(cue, strength: k, cornerRadius: Viewfinder.radius)
+            .allowsHitTesting(false)
+    }
+
+    private var cue: (EdgeGlow.Cue, Double) {
+        // The border pulses once when a shot's depth scan lands.
+        if fx.pulse { return (.aligned, 1) }
+        if let g = app.coach.guide {
+            if g == .hold { return (.aligned, 1) }
+            let k: Double
+            switch app.coach.guideStrength {
+            case .small: k = 0.55
+            case .medium: k = 0.8
+            case .large: k = 1
             }
-            .padding(.leading, 10)
-            .padding(.trailing, 12)
-            .frame(height: 32)
-            .coachGlass(cornerRadius: 16)
+            return (Self.cue(g, tilt: tilt.angle), k)
         }
-        .accessibilityLabel("Coach status: \(label)")
+        return (.hold, 1)
     }
 
-    private var state: (String, Color, Bool) {
-        switch app.link {
-        case .unpaired: return ("PAIR MAC", CoachColor.signal, false)
-        case .unauthorized: return ("PAIR AGAIN", CoachColor.signal, false)
-        case .checking: return ("CORE…", CoachColor.paper55, false)
-        case .offline: return ("OFFLINE", CoachColor.signal, false)
-        case .online: break
-        }
-        switch app.coach.phase {
-        case .off: return (app.coachEnabled ? "COACH" : "COACH OFF", CoachColor.paper, false)
-        case .connecting: return ("CONNECTING", CoachColor.safelight, false)
-        case .reconnecting: return ("RECONNECT", CoachColor.safelight, false)
-        case .live: return ("LIVE", CoachColor.safelight, true)
-        case .failed: return ("RETRY", CoachColor.signal, false)
+    /// The coach speaks in the upright picture it sees (the user's frame: frames go out level
+    /// with the horizon); the glow lives on the portrait card. Sideways, "left" is the card's
+    /// top (+90, phone top to the left) or bottom (-90). Roll, closer and back don't change.
+    static func cue(_ d: GuideDirection, tilt: Double) -> EdgeGlow.Cue {
+        switch d {
+        case .left: return .move(edge(x: -1, y: 0, tilt: tilt))
+        case .right: return .move(edge(x: 1, y: 0, tilt: tilt))
+        case .up: return .move(edge(x: 0, y: -1, tilt: tilt))
+        case .down: return .move(edge(x: 0, y: 1, tilt: tilt))
+        case .closer: return .closer
+        case .back: return .back
+        case .rotateLeft: return .roll(clockwise: false)
+        case .rotateRight: return .roll(clockwise: true)
+        case .hold: return .aligned
         }
     }
-}
 
-/// zoom · ISO · EV, values the coach just changed in safelight.
-private struct ReadoutPill: View {
-    @Environment(AppModel.self) private var app
-
-    var body: some View {
-        let s = app.camera.snapshot
-        HStack(spacing: 7) {
-            value(String(format: s.zoom < 0.95 ? "%.1f×" : (s.zoom.truncatingRemainder(dividingBy: 1) < 0.05 ? "%.0f×" : "%.1f×"), s.zoom), .zoom)
-            dot
-            value("ISO \(Int(s.iso.rounded()))", .iso)
-            dot
-            value(String(format: "%@%.1f", s.ev >= 0 ? "+" : "−", abs(s.ev)), .ev)
-        }
-        .font(CoachFont.readout)
-        .monospacedDigit()
-        .padding(.horizontal, 14)
-        .frame(height: 32)
-        .coachGlass(cornerRadius: 16)
-        .animation(CoachEase.out(CoachDuration.fast), value: app.coachTouched)
-    }
-
-    private var dot: some View { Text("·").foregroundStyle(CoachColor.paper.opacity(0.4)) }
-
-    private func value(_ text: String, _ p: CameraParameter) -> some View {
-        Text(text).foregroundStyle(app.coachTouched.contains(p) ? CoachColor.safelight : CoachColor.paper)
+    /// Turns a user-frame direction (y down) clockwise by the tilt onto the card's edges.
+    static func edge(x: Int, y: Int, tilt: Double) -> EdgeGlow.Edges {
+        let (sx, sy) = tilt > 45 ? (-y, x) : (tilt < -45 ? (y, -x) : (x, y))
+        if sx < 0 { return .left }
+        if sx > 0 { return .right }
+        return sy < 0 ? .top : .bottom
     }
 }
 
-// MARK: - Coach line / what the user said
-
-private struct CoachLine: View {
-    @Environment(AppModel.self) private var app
+/// The few marks on the card: the live dot (top-left), the last shot (bottom-left), the frame
+/// aspect (bottom-right) and the coach's yellow suggestion tag (top-centre as the user holds the
+/// phone). Marks stay put when the phone turns; their content turns to face the user.
+private struct ViewfinderHUD: View {
+    @Environment(StageFX.self) private var fx
+    @Environment(DeviceTilt.self) private var tilt
+    @Environment(SuggestionFeed.self) private var suggestion
 
     var body: some View {
         ZStack {
-            if let heard = app.coach.heard, app.coach.caption == nil {
-                HStack(spacing: 8) {
-                    Image(systemName: "waveform")
-                        .font(.system(size: 15, weight: .semibold))
-                    Text("“\(heard)”")
-                        .font(CoachFont.sans(16, weight: .medium).italic())
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                }
-                .foregroundStyle(CoachColor.paper)
-                .padding(.leading, 12)
+            UserFrame {
+                SuggestionTag(feed: suggestion)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 14)
+            }
+            CoachDot()
+                .opacity(fx.dot)
+                .scaleEffect(0.4 + 0.6 * fx.dot)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(3)
+            Text("4:3")
+                .font(GXFont.mono(9))
+                .tracking(9 * 0.14)
+                .foregroundStyle(GXColor.frost.opacity(0.55))
+                .fixedSize()
+                .upright(tilt)
+                .opacity(fx.thumb)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                 .padding(.trailing, 16)
-                .padding(.vertical, 10)
-                .coachGlass(cornerRadius: 22)
-                .transition(.opacity)
-            } else if let caption = app.coach.caption {
-                HStack(spacing: 10) {
-                    Circle().fill(CoachColor.safelight).frame(width: 8, height: 8)
-                    Text(caption)
-                        .font(CoachFont.sans(17, weight: .medium))
-                        .foregroundStyle(CoachColor.paper)
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                }
-                .padding(.leading, 14)
-                .padding(.trailing, 18)
-                .padding(.vertical, 11)
-                .coachGlass(cornerRadius: CoachRadius.md, strong: true)
-                .transition(.opacity.combined(with: .offset(y: 6)))
-            }
+                .padding(.bottom, 26)
+                .allowsHitTesting(false)
+            UserFrame { TalkStack() }
         }
-        .frame(minHeight: 44)
-        .animation(CoachEase.out(CoachDuration.base), value: app.coach.caption == nil)
-        .animation(CoachEase.out(CoachDuration.base), value: app.coach.heard == nil)
     }
 }
 
-// MARK: - Modes
-
-private struct ModeSelector: View {
+/// 6pt Gemini dot: lit while the coach is live, breathing while it connects, red when it failed,
+/// dim when the coach is paused. Tap: pause / resume. Long press: settings.
+private struct CoachDot: View {
     @Environment(AppModel.self) private var app
+    @Environment(DeviceTilt.self) private var tilt
 
     var body: some View {
-        let active = app.camera.snapshot.mode
-        HStack(spacing: 22) {
-            ForEach(CaptureMode.allCases, id: \.self) { m in
-                let on = m == active
-                let coach = on && app.coach.coachMode == m
-                Button { app.userMode(m) } label: {
-                    VStack(spacing: 6) {
-                        Text(m.rawValue.uppercased())
-                            .font(CoachFont.mono(12, weight: .semibold))
-                            .tracking(CoachFont.labelTracking(12))
-                            .foregroundStyle(on ? (coach ? CoachColor.safelight : CoachColor.paper) : CoachColor.paper62)
-                        Circle()
-                            .fill(coach ? CoachColor.safelight : CoachColor.paper)
-                            .frame(width: 4, height: 4)
-                            .shadow(color: coach ? CoachColor.safelight : .clear, radius: 4)
-                            .opacity(on ? 1 : 0)
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(m.rawValue) mode")
-                .accessibilityAddTraits(on ? .isSelected : [])
+        let (color, glow, pulse, label) = state
+        Button { app.statusTapped() } label: {
+            TimelineView(.animation(minimumInterval: 1.0 / 20, paused: !pulse)) { ctx in
+                let k = pulse ? 0.45 + 0.55 * (0.5 + 0.5 * sin(ctx.date.timeIntervalSinceReferenceDate * 2 * .pi / 1.4)) : 1
+                Circle()
+                    .fill(color)
+                    .frame(width: 6, height: 6)
+                    .overlay(Circle().stroke(color.opacity(glow ? 0.18 : 0), lineWidth: 3).frame(width: 9, height: 9))
+                    .shadow(color: glow ? color.opacity(0.95) : .clear, radius: 4)
+                    .opacity(k)
             }
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
         }
-        .animation(CoachEase.out(CoachDuration.base), value: active)
+        .buttonStyle(.plain)
+        .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in app.showSettings = true })
+        .accessibilityLabel("Heliocam: \(label)")
+        .accessibilityAction(named: "Settings") { app.showSettings = true }
+    }
+
+    private var state: (Color, Bool, Bool, String) {
+        switch app.coach.phase {
+        case .live: return (GXColor.gemini, true, false, "live")
+        case .connecting, .reconnecting: return (GXColor.gemini, false, true, "connecting")
+        case .failed: return (GXColor.signal, true, false, "failed, tap to retry")
+        case .off: return (GXColor.frost.opacity(0.45), false, false, "paused, tap to start")
+        }
     }
 }
 
-// MARK: - Shutter row
-
-private struct ControlRow: View {
-    @Environment(AppModel.self) private var app
+/// Tap-to-focus: the blue "+" pops in and fades after a second.
+private struct FocusMarkFlash: View {
+    @State private var shown = true
+    @State private var scale = 1.3
 
     var body: some View {
-        HStack {
-            LastShotThumb()
-            Spacer()
-            ShutterButton(state: shutterState) {
-                Task { await app.capture() }
+        TapFocusMark()
+            .scaleEffect(scale)
+            .opacity(shown ? 1 : 0)
+            .onAppear {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { scale = 1 }
+                withAnimation(.easeIn(duration: 0.35).delay(1.1)) { shown = false }
             }
-            Spacer()
-            VoiceToggle()
+    }
+}
+
+// MARK: - Instrument panel
+
+private struct InstrumentPanel: View {
+    @Environment(AppModel.self) private var app
+    @Environment(StageFX.self) private var fx
+    @Environment(DeviceTilt.self) private var tilt
+
+    private var scanning: Bool { fx.scanOn }
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            ZStack { GXColor.panel; GrainOverlay() }
+            VStack(spacing: 0) {
+                hairline
+                InstrumentDrums(iso: drum(\.iso), shutter: drum(\.shutter), ev: drum(\.ev), actor: app.drumActor)
+                    .frame(height: 84)
+                    .frame(height: 83, alignment: .bottom)
+                    .clipped()
+                    .modifier(RollIn(k: fx.drums))
+                hairline
+                FocusRuler(metres: Binding(get: { app.focusMetres }, set: { app.userSetFocus($0) }),
+                           actor: app.rulerActor)
+                    .frame(height: 44)
+                    .frame(height: 43)
+                    .clipped()
+                    .modifier(RollIn(k: fx.drums))
+                hairline
+                Spacer(minLength: 0)
+            }
+            .opacity(scanning ? 0.3 : 1)
+            .animation(.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.42), value: scanning)
+            Keys()
+                .opacity(fx.keys)
+                .offset(y: 12 * (1 - fx.keys))
+                .frame(height: 124)
+                .offset(y: 128)
         }
-        .frame(height: 84)
+        .instrumentGlyphAngle(.degrees(tilt.angle))
     }
 
-    private var shutterState: ShutterState {
-        if !app.camera.isRunning { return .disabled }
-        if app.capturing { return .busy }
+    /// Hairlines draw in from the left during the opening.
+    private var hairline: some View {
+        Rectangle().fill(GXColor.hairline).frame(height: 1)
+            .scaleEffect(x: fx.hairlines, y: 1, anchor: .leading)
+    }
+
+    private func drum(_ key: KeyPath<AppModel, InstrumentValue>) -> Binding<InstrumentValue> {
+        Binding(get: { app[keyPath: key] }, set: { app.userSet($0) })
+    }
+}
+
+/// Mic + lantern shutter. Kept separate so the 30 Hz mic level only redraws the keys.
+private struct Keys: View {
+    @Environment(AppModel.self) private var app
+    @Environment(StageFX.self) private var fx
+
+    var body: some View {
+        // Listening only while the engine really runs (not merely "voice on + live"), so a failed
+        // or interrupted mic shows as off, and its level is the real processed input.
+        let audio = app.coach.audio
+        let engineUp = audio?.isRunning ?? false
+        let listening = app.voiceOn && app.coach.phase == .live && engineUp
+        HStack(spacing: 0) {
+            CoachKeys(shutter: shutter, listening: listening,
+                  level: listening ? Double(audio?.inputLevel ?? 0) : 0,
+                  onMic: {
+                      // Voice on and live but the engine is down: bring the mic back, don't mute.
+                      if app.voiceOn, app.coach.phase == .live, !engineUp {
+                          Task { await app.coach.restartAudio() }
+                      } else {
+                          app.micTapped()
+                      }
+                  },
+                  onShutter: { Task { await app.capture() } })
+            RollKey()
+                .padding(.leading, -4)   // the keys' 12 pt gap (CoachKeys pads 16 on each side)
+                .padding(.trailing, 16)
+        }
+    }
+
+    private var shutter: CoachKeys.Shutter {
+        if fx.check { return .depthReady }
         return app.coach.ready ? .ready : .idle
     }
 }
 
-private struct LastShotThumb: View {
+/// The one gallery entry point: the newest shot, the keys' height (72 pt) and radius. A fresh
+/// shot lands here (the previous one holds until the capture flash and sweep finish); tap opens
+/// the gallery.
+private struct RollKey: View {
     @Environment(AppModel.self) private var app
+    @Environment(StageFX.self) private var fx
+    @Environment(DeviceTilt.self) private var tilt
+
+    private var shown: CGImage? { fx.holdThumb ? fx.heldThumb : app.shots.lastThumb }
 
     var body: some View {
-        Button { app.showSettings = true } label: {
+        Button { if !app.shots.shots.isEmpty { app.showRoll = true } } label: {
             ZStack {
-                if let img = app.sync.lastThumb {
+                GXColor.night
+                if let img = shown {
                     Image(decorative: img, scale: 1).resizable().scaledToFill()
-                } else {
-                    CoachColor.graphite.overlay(
-                        Image(systemName: "photo").font(.system(size: 18)).foregroundStyle(CoachColor.paper45))
+                        .upright(tilt)
+                        .id(ObjectIdentifier(img))
+                        .transition(.opacity.combined(with: .scale(scale: 1.3)))
                 }
             }
-            .frame(width: 56, height: 56)
-            .clipShape(RoundedRectangle(cornerRadius: CoachRadius.thumb, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: CoachRadius.thumb, style: .continuous)
-                .stroke(CoachColor.paper.opacity(0.9), lineWidth: 2))
-            .shadow(color: .black.opacity(0.35), radius: 9, y: 6)
-            .overlay(alignment: .topTrailing) { SyncBadge().offset(x: 6, y: -6) }
+            .frame(width: 72, height: 72)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(GXColor.frost.opacity(0.14), lineWidth: 1))
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Last shot, \(syncLabel)")
-    }
-
-    private var syncLabel: String {
-        switch app.sync.status {
-        case .uploading: return "syncing to the Mac"
-        case .synced: return "synced"
-        case .queued: return "\(app.sync.pending) waiting to sync"
-        case .failed(let m): return "sync failed: \(m)"
-        case .idle: return "no shots yet"
-        }
+        .buttonStyle(KeyPressStyle())
+        .animation(.spring(response: 0.42, dampingFraction: 0.7), value: shown.map(ObjectIdentifier.init))
+        .accessibilityLabel(app.shots.shots.isEmpty ? "No shots yet" : "Gallery")
     }
 }
 
-/// The small dot on the last-shot thumb: spinning while uploading, a count while queued,
-/// a check once Core has it.
-private struct SyncBadge: View {
+// MARK: - Words, kept small
+
+/// Bottom of the card (the user's bottom when sideways): the user's own words as a faint "you"
+/// line while they speak. The coach's spoken line is the yellow `SuggestionTag` at the top.
+private struct TalkStack: View {
     @Environment(AppModel.self) private var app
-    @State private var spin = false
+    @Environment(DeviceTilt.self) private var tilt
 
     var body: some View {
-        Group {
-            switch app.sync.status {
-            case .uploading:
-                Circle()
-                    .trim(from: 0, to: 0.7)
-                    .stroke(CoachColor.safelight, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-                    .frame(width: 14, height: 14)
-                    .rotationEffect(.degrees(spin ? 360 : 0))
-                    .animation(.linear(duration: 0.9).repeatForever(autoreverses: false), value: spin)
-                    .onAppear { spin = true }
-                    .onDisappear { spin = false }
-                    .padding(3)
-                    .background(Circle().fill(CoachColor.ink.opacity(0.8)))
-            case .synced:
-                Image(systemName: "checkmark")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(CoachColor.ink)
-                    .frame(width: 20, height: 20)
-                    .background(Circle().fill(CoachColor.safelight))
-            case .queued:
-                Text("\(app.sync.pending)")
-                    .font(CoachFont.mono(11, weight: .bold))
-                    .foregroundStyle(CoachColor.ink)
-                    .frame(minWidth: 20, minHeight: 20)
-                    .background(Capsule().fill(CoachColor.paper))
-            case .failed:
-                Image(systemName: "exclamationmark")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(CoachColor.paper)
-                    .frame(width: 20, height: 20)
-                    .background(Circle().fill(CoachColor.signal))
-            case .idle:
-                EmptyView()
+        VStack(spacing: 6) {
+            if let heard = app.coach.heard {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("YOU")
+                        .font(GXFont.mono(9))
+                        .tracking(9 * 0.14)
+                        .foregroundStyle(GXColor.frost.opacity(0.45))
+                    Text(heard)
+                        .font(GXFont.display(13))
+                        .foregroundStyle(GXColor.frost.opacity(0.62))
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
+                .shadow(color: .black.opacity(0.6), radius: 6)
+                .transition(.opacity)
             }
         }
-        .transition(.scale.combined(with: .opacity))
-        .animation(CoachEase.pop(), value: app.sync.status)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
+        .animation(.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.32), value: app.coach.heard == nil)
     }
 }
 
-/// Coach voice on/off (mutes playback; the mic stays live). Bars follow the coach's voice.
-private struct VoiceToggle: View {
-    @Environment(AppModel.self) private var app
-
-    var body: some View {
-        Button { app.voiceOn.toggle() } label: {
+private extension View {
+    /// The v2 glass: night blue over a blur, a hairline, a soft drop shadow.
+    func glassPill(cornerRadius r: CGFloat, tint: Color? = nil) -> some View {
+        let shape = RoundedRectangle(cornerRadius: r, style: .continuous)
+        return background {
             ZStack {
-                if app.voiceOn {
-                    Circle().fill(CoachColor.safelight.opacity(0.16))
-                    Circle().stroke(CoachColor.safelight, lineWidth: 1.5)
-                    VoiceBars(audio: app.coach.audio)
-                } else {
-                    Circle().fill(.clear).coachGlass(cornerRadius: 28)
-                    Image(systemName: "speaker.slash.fill")
-                        .font(.system(size: 20, weight: .medium))
-                        .foregroundStyle(CoachColor.paper)
-                }
+                shape.fill(.ultraThinMaterial)
+                shape.fill(Color(red: 10 / 255, green: 14 / 255, blue: 28 / 255).opacity(0.72))
+                if let tint { shape.fill(tint.opacity(0.08)) }
+                shape.strokeBorder(GXColor.hairline, lineWidth: 1)
             }
-            .frame(width: 56, height: 56)
-            .shadow(color: app.voiceOn ? CoachColor.safelight.opacity(0.35) : .clear, radius: 12)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(app.voiceOn ? "Coach voice on" : "Coach voice off")
-        .animation(CoachEase.out(CoachDuration.base), value: app.voiceOn)
-    }
-}
-
-private struct VoiceBars: View {
-    let audio: LiveAudio?
-
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30)) { ctx in
-            let level = CGFloat(audio?.currentOutputLevel ?? 0)
-            let t = ctx.date.timeIntervalSinceReferenceDate
-            HStack(spacing: 3) {
-                ForEach(0..<6, id: \.self) { i in
-                    let wobble = 0.55 + 0.45 * sin(t * (7 + Double(i) * 1.7) + Double(i))
-                    let h = 4 + (level > 0.02 ? 22 * level * CGFloat(wobble) : 0)
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(i == 3 ? CoachColor.safelightHot : CoachColor.safelight)
-                        .frame(width: 3, height: min(26, max(4, h)))
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Intent chip
-
-private struct IntentChip: View {
-    let intent: ShotIntent
-    let subject: String?
-    let modeByCoach: CaptureMode?
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: glyph)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(CoachColor.ink)
-                .frame(width: 32, height: 32)
-                .background(Circle().fill(CoachColor.safelightGradient))
-            Text(text)
-                .font(CoachFont.sans(16, weight: .semibold))
-                .foregroundStyle(CoachColor.paper)
-                .lineLimit(1)
-        }
-        .padding(.leading, 6)
-        .padding(.trailing, 18)
-        .frame(height: 44)
-        .coachGlass(cornerRadius: 22, coach: true)
-        .shadow(color: CoachColor.safelight.opacity(0.18), radius: 14)
-        .accessibilityElement(children: .combine)
-    }
-
-    private var text: String {
-        if modeByCoach == .portrait, intent == .portrait { return "Portrait on" + (subject.map { " · \($0)" } ?? "") }
-        let name = intent.rawValue.capitalized
-        return subject.map { "\(name) · \($0)" } ?? name
-    }
-
-    private var glyph: String {
-        switch intent {
-        case .portrait: return "person.fill"
-        case .group: return "person.3.fill"
-        case .landscape: return "mountain.2.fill"
-        case .object: return "cube.fill"
-        case .food: return "fork.knife"
-        case .street: return "building.2.fill"
-        case .document: return "doc.text.fill"
-        case .other: return "sparkles"
+            .shadow(color: .black.opacity(0.35), radius: 10, y: 5)
         }
     }
 }

@@ -1,7 +1,7 @@
 import CoachUI
 import SwiftUI
 
-/// Server, coach voice, Photos, sync. Deliberately small: the camera is the app.
+/// Coach, voice, Photos. Deliberately small: the camera is the app.
 struct SettingsSheet: View {
     @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
@@ -10,50 +10,29 @@ struct SettingsSheet: View {
         @Bindable var app = app
         NavigationStack {
             Form {
-                Section("Mac") {
-                    LabeledContent("Coach Core", value: linkText)
-                    if let p = app.pairing {
-                        LabeledContent("Address", value: "\(p.host):\(p.port)")
-                    }
-                    Button("Pair with a Mac…") {
-                        dismiss()
-                        Task { @MainActor in
-                            try? await Task.sleep(for: .milliseconds(350))
-                            app.showPairing = true
-                        }
-                    }
-                    if app.pairing != nil {
-                        Button("Forget this Mac", role: .destructive) { app.forgetPairing() }
-                    }
-                }
                 Section {
-                    Toggle("Live coach", isOn: Binding(
+                    Toggle("Live coaching", isOn: Binding(
                         get: { app.coachEnabled },
                         set: { on in
                             app.coachEnabled = on
                             if on { Task { await app.startCoachIfReady() } } else { app.coach.stop() }
                         }))
-                    Toggle("Coach voice", isOn: $app.voiceOn)
+                    Toggle("Gemini voice", isOn: $app.voiceOn)
                     if let ms = app.coach.connectMs {
                         LabeledContent("Connect time", value: "\(ms) ms")
                     }
                 } header: {
-                    Text("Coach")
+                    Text("Heliocam")
                 } footer: {
-                    Text("With the voice off the coach still listens, moves the dials and shows captions.")
+                    Text("With the voice off the mic and Gemini's voice are muted; it still watches, guides with the border, shows tips as a yellow tag and moves the dials.")
                 }
                 Section {
                     Toggle("Save to Photos", isOn: $app.saveToPhotos)
-                    LabeledContent("Waiting to sync", value: "\(app.sync.pending)")
-                    if let id = app.sync.lastShotID {
-                        LabeledContent("Last synced", value: id)
-                    }
-                    Button("Sync now") { app.sync.kick() }
-                        .disabled(app.sync.pending == 0)
+                    LabeledContent("Shots on this phone", value: "\(app.shots.shots.count)")
                 } header: {
                     Text("Shots")
                 } footer: {
-                    Text("Every shot is kept on the phone until Coach Core has it.")
+                    Text("Every shot stays in Heliocam on this phone; Save to Photos also adds it to your library.")
                 }
             }
             .navigationTitle("Settings")
@@ -66,13 +45,4 @@ struct SettingsSheet: View {
         .tint(CoachColor.safelight)
     }
 
-    private var linkText: String {
-        switch app.link {
-        case .unpaired: return "Not paired"
-        case .checking: return "Checking…"
-        case .online: return "Connected"
-        case .offline: return "Offline"
-        case .unauthorized: return "Pair again"
-        }
-    }
 }

@@ -71,8 +71,9 @@ public struct CoachKeys: View {
 }
 
 /// Press compresses the key to 0.96.
-struct KeyPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
+public struct KeyPressStyle: ButtonStyle {
+    public init() {}
+    public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .animation(.spring(response: 0.22, dampingFraction: 0.7), value: configuration.isPressed)
@@ -125,6 +126,7 @@ struct MicKey: View {
                 .clipShape(shape)
             GeometryReader { geo in
                 MicGlyph()
+                    .instrumentGlyphTurn()
                     .frame(width: 22, height: 22)
                     .position(x: listening ? 27 : geo.size.width / 2, y: geo.size.height / 2)
                 if listening {
@@ -241,9 +243,9 @@ struct ShutterKey: View {
                 .clipShape(shape)
             // Debossed mark.
             if shutter == .depthReady {
-                DebossCheck().transition(.opacity)
+                DebossCheck().instrumentGlyphTurn().transition(.opacity)
             } else {
-                DebossPlus().transition(.opacity)
+                DebossPlus().instrumentGlyphTurn().transition(.opacity)
             }
             GrainOverlay(amount: 0.021, animated: false, tile: 120)
                 .blendMode(.overlay)

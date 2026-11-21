@@ -5,9 +5,10 @@ import ImageIO
 import QuartzCore
 import UniformTypeIdentifiers
 
-/// The real camera: one `AVCaptureSession` on the back camera (a virtual multi-lens device when
-/// the iPhone has one), a photo output (HEIF, depth in portrait) and a video data output that feeds
-/// Live frames. `apply` drives the hardware for `set_camera` and the user's dials.
+/// The real camera: one `AVCaptureSession` on the back camera (the LiDAR depth camera when the
+/// iPhone has one, else the wide lens), a photo output (HEIF, depth with every photo when the
+/// camera has it) and a video data output that feeds Live frames. `apply` drives the hardware for
+/// `set_camera` and the user's dials.
 ///
 /// Threading: every device/session call runs on `queue`. KVO on the device marks the snapshot
 /// dirty; it is read and published on the main queue at most every 100 ms.
@@ -74,9 +75,20 @@ final class AVCaptureEngine: NSObject, CaptureEngine, @unchecked Sendable {
         lock.withLock { rotation = degrees }
     }
 
+    /// The physical wide camera: virtual multi-lens devices refuse custom exposure and manual lens
+    /// position (`setExposureModeCustom` throws "Unsupported" on an iPhone 15 Pro's triple camera),
+    /// and the coach's ISO / shutter / focus changes are the point. Zoom is digital on that lens.
+    /// First choice: the LiDAR depth camera (that same wide lens + LiDAR, no lens switching), when
+    /// it takes those manual controls, so every photo carries dense metric depth.
     private static func bestBackCamera() -> AVCaptureDevice? {
-        let types: [AVCaptureDevice.DeviceType] = [.builtInTripleCamera, .builtInDualWideCamera,
-                                                   .builtInDualCamera, .builtInWideAngleCamera]
+        if let lidar = AVCaptureDevice.default(.builtInLiDARDepthCamera, for: .video, position: .back),
+           lidar.isExposureModeSupported(.custom), lidar.isLockingFocusWithCustomLensPositionSupported,
+           lidar.isLockingWhiteBalanceWithCustomDeviceGainsSupported,
+           lidar.formats.contains(where: { !$0.supportedDepthDataFormats.isEmpty }) {
+            return lidar
+        }
+        let types: [AVCaptureDevice.DeviceType] = [.builtInWideAngleCamera, .builtInTripleCamera,
+                                                   .builtInDualWideCamera, .builtInDualCamera]
         let found = AVCaptureDevice.DiscoverySession(deviceTypes: types, mediaType: .video, position: .back).devices
         for t in types { if let d = found.first(where: { $0.deviceType == t }) { return d } }
         return nil
@@ -87,6 +99,9 @@ final class AVCaptureEngine: NSObject, CaptureEngine, @unchecked Sendable {
               let input = try? AVCaptureDeviceInput(device: device) else { return false }
         session.beginConfiguration()
         defer { session.commitConfiguration() }
+        // Video only: the Live coach owns the audio session (`.playAndRecord`); capture must
+        // never reconfigure it.
+        session.automaticallyConfiguresApplicationAudioSession = false
         session.sessionPreset = .photo
         guard session.canAddInput(input), session.canAddOutput(photoOutput) else { return false }
         session.addInput(input)
@@ -98,6 +113,7 @@ final class AVCaptureEngine: NSObject, CaptureEngine, @unchecked Sendable {
             videoOutput.setSampleBufferDelegate(self, queue: videoQueue)
             session.addOutput(videoOutput)
         }
+        Self.selectDepthFormat(device)
         // Photos: Core keeps originals up to 4032 px, so skip 48 MP (faster capture, smaller upload).
         let dims = device.activeFormat.supportedMaxPhotoDimensions
         if let best = dims.filter({ max($0.width, $0.height) <= 4032 }).max(by: { $0.width * $0.height < $1.width * $1.height })
@@ -119,13 +135,57 @@ final class AVCaptureEngine: NSObject, CaptureEngine, @unchecked Sendable {
             }
             // Start at 1× (the wide lens) on multi-lens devices, like the system camera.
             if let wide = lensZooms[.wide] {
-                device.videoZoomFactor = Self.clamp(wide / Double(device.displayVideoZoomFactorMultiplier),
-                                                    Double(device.minAvailableVideoZoomFactor)...Double(device.maxAvailableVideoZoomFactor))
+                let f = Self.clamp(wide / Double(device.displayVideoZoomFactorMultiplier),
+                                   Double(device.minAvailableVideoZoomFactor)...Double(device.maxAvailableVideoZoomFactor))
+                device.videoZoomFactor = CGFloat(depthSafeZoom(f, device).factor)
             }
             device.unlockForConfiguration()
         }
         observe(device)
         return true
+    }
+
+    /// Depth-capable devices (LiDAR / dual): keep the preset's format when it carries depth, else
+    /// take the depth format with the largest photo ≤ 4032 px (continuous zoom with depth, 4:3 and
+    /// unbinned preferred). Then the densest depth map, metric `DepthFloat32` first.
+    private static func selectDepthFormat(_ d: AVCaptureDevice) {
+        guard d.formats.contains(where: { !$0.supportedDepthDataFormats.isEmpty }),
+              (try? d.lockForConfiguration()) != nil else { return }
+        defer { d.unlockForConfiguration() }
+        if d.activeFormat.supportedDepthDataFormats.isEmpty {
+            func score(_ f: AVCaptureDevice.Format) -> (Int, Int, Int, Int, Int) {
+                let photo = f.supportedMaxPhotoDimensions.filter { max($0.width, $0.height) <= 4032 }
+                    .map { Int($0.width) * Int($0.height) }.max() ?? 0
+                let continuous = f.supportedVideoZoomRangesForDepthDataDelivery.contains { $0.lowerBound < $0.upperBound }
+                let v = f.formatDescription.dimensions
+                let fourThree = Int(v.width) * 3 == Int(v.height) * 4
+                return (photo, continuous ? 1 : 0, fourThree ? 1 : 0, f.isVideoBinned ? 0 : 1, Int(v.width) * Int(v.height))
+            }
+            if let best = d.formats.filter({ !$0.supportedDepthDataFormats.isEmpty }).max(by: { score($0) < score($1) }) {
+                d.activeFormat = best
+            }
+        }
+        let rank: [OSType: Int] = [kCVPixelFormatType_DepthFloat32: 3, kCVPixelFormatType_DepthFloat16: 2,
+                                   kCVPixelFormatType_DisparityFloat32: 1]
+        func depthScore(_ f: AVCaptureDevice.Format) -> (Int, Int) {
+            let dims = f.formatDescription.dimensions
+            return (rank[f.formatDescription.mediaSubType.rawValue] ?? 0, Int(dims.width) * Int(dims.height))
+        }
+        if let depth = d.activeFormat.supportedDepthDataFormats.max(by: { depthScore($0) < depthScore($1) }) {
+            d.activeDepthDataFormat = depth
+        }
+    }
+
+    /// With depth on, a virtual device may accept only certain zoom factors (discrete depth ranges
+    /// throw on any other value): snap to the nearest and set it without a ramp. Continuous ranges
+    /// accept any zoom; outside them the photo just has no depth.
+    private func depthSafeZoom(_ f: Double, _ d: AVCaptureDevice) -> (factor: Double, ramp: Bool) {
+        guard photoOutput.isDepthDataDeliveryEnabled else { return (f, true) }
+        let ranges = d.activeFormat.supportedVideoZoomRangesForDepthDataDelivery
+        guard !ranges.isEmpty, !ranges.contains(where: { $0.lowerBound < $0.upperBound }) else { return (f, true) }
+        if ranges.contains(where: { abs(Double($0.lowerBound) - f) < 0.001 }) { return (f, false) }
+        let snapped = ranges.map { Double($0.lowerBound) }.min { abs($0 - f) < abs($1 - f) } ?? f
+        return (snapped, false)
     }
 
     /// Display zoom per lens: constituent devices are ordered widest first, and the virtual
@@ -201,6 +261,8 @@ final class AVCaptureEngine: NSObject, CaptureEngine, @unchecked Sendable {
         s.evRange = max(Double(d.minExposureTargetBias), -3)...min(Double(d.maxExposureTargetBias), 3)
         s.zoomRange = displayZoomRange(d)
         s.lenses = lensZooms
+        // Virtual devices can report the ultra-wide's macro distance (2 cm); keep it to a main-lens range.
+        if d.minimumFocusDistance > 0 { s.minFocus = min(max(Double(d.minimumFocusDistance) / 1000, 0.12), 0.5) }
         s.hasTorch = d.hasTorch
         s.torch = d.torchMode == .on
         s.depthAvailable = photoOutput.isDepthDataDeliveryEnabled
@@ -293,8 +355,9 @@ final class AVCaptureEngine: NSObject, CaptureEngine, @unchecked Sendable {
         defer { d.unlockForConfiguration() }
 
         if let z = r.zoom {
-            let f = Self.clamp(z / mult, Double(d.minAvailableVideoZoomFactor)...Double(d.maxAvailableVideoZoomFactor))
-            d.ramp(toVideoZoomFactor: CGFloat(f), withRate: 10)
+            let safe = depthSafeZoom(Self.clamp(z / mult, Double(d.minAvailableVideoZoomFactor)...Double(d.maxAvailableVideoZoomFactor)), d)
+            let f = safe.factor
+            if safe.ramp { d.ramp(toVideoZoomFactor: CGFloat(f), withRate: 10) } else { d.videoZoomFactor = CGFloat(f) }
             let shown = (f * mult * 100).rounded() / 100
             out.zoom = shown
             out.lens = lensZooms.sorted { $0.value < $1.value }.last { $0.value <= shown + 0.01 }?.key ?? .wide
@@ -374,6 +437,12 @@ final class AVCaptureEngine: NSObject, CaptureEngine, @unchecked Sendable {
             }
         }
         guard touched else { return }
+        guard d.isExposureModeSupported(.custom) else {
+            lock.withLock { isoManual = nil; shutterManual = nil }
+            if r.iso?.number != nil { out.ignored.append("iso (manual exposure unsupported)") }
+            if r.shutter?.number != nil { out.ignored.append("shutter (manual exposure unsupported)") }
+            return
+        }
         let (isoM, shM) = lock.withLock { (isoManual, shutterManual) }
         let product = Double(d.iso) * d.exposureDuration.seconds   // what the meter has now (ISO·s)
         func custom(_ dur: Double, _ iso: Double) {
@@ -493,10 +562,15 @@ final class AVCaptureEngine: NSObject, CaptureEngine, @unchecked Sendable {
                     : AVCapturePhotoSettings()
                 settings.maxPhotoDimensions = out.maxPhotoDimensions
                 settings.photoQualityPrioritization = .balanced
-                let (mode, flash, rot) = self.lock.withLock { (self.mode, self.flash, self.rotation) }
-                if mode == .portrait, out.isDepthDataDeliveryEnabled {
-                    settings.isDepthDataDeliveryEnabled = true
-                    settings.embedsDepthDataInPhoto = true
+                let (flash, rot) = self.lock.withLock { (self.flash, self.rotation) }
+                // Depth with every photo, in every mode, whenever this zoom can deliver it
+                // (LiDAR: metric; dual camera: relative; ultrawide / macro: none).
+                if out.isDepthDataDeliveryEnabled, let d = self.device {
+                    let ranges = d.activeFormat.supportedVideoZoomRangesForDepthDataDelivery
+                    if ranges.isEmpty || ranges.contains(where: { $0.contains(d.videoZoomFactor) }) {
+                        settings.isDepthDataDeliveryEnabled = true
+                        settings.embedsDepthDataInPhoto = true
+                    }
                 }
                 let fm: AVCaptureDevice.FlashMode = flash == .on ? .on : (flash == .auto ? .auto : .off)
                 if out.supportedFlashModes.contains(fm) { settings.flashMode = fm }
@@ -553,6 +627,9 @@ private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegat
         let iso = (exif?[kCGImagePropertyExifISOSpeedRatings as String] as? [NSNumber])?.first?.doubleValue
         let shutter = (exif?[kCGImagePropertyExifExposureTime as String] as? NSNumber)?.doubleValue
         let hasDepth = photo.depthData != nil
+        let depth = photo.depthData
+        let orientation = (photo.metadata[kCGImagePropertyOrientation as String] as? NSNumber)
+            .flatMap { CGImagePropertyOrientation(rawValue: $0.uint32Value) } ?? .up
         DispatchQueue.global(qos: .userInitiated).async { [done] in
             guard var shot = PhotoFiles.jpegForUpload(data) else {
                 done(.failure(CameraError.captureFailed("JPEG conversion failed")))
@@ -561,6 +638,10 @@ private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegat
             shot.iso = iso
             shot.shutter = shutter
             shot.hasDepth = hasDepth
+            // Depth Pro 2 on device when bundled (#41), else the photo's LiDAR/AVDepthData.
+            shot.depthPNG = PhotoDepth.depthPNGmm(fromPhotoData: data)
+                ?? depth.flatMap { PhotoDepth.depthPNGmm(from: $0, orientation: orientation) }
+            shot.hasDepth = shot.depthPNG != nil
             done(.success(shot))
         }
     }

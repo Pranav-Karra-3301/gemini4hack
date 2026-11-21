@@ -1,6 +1,6 @@
 import Foundation
 
-/// Errors from `CoachClient`, `PairingStore` and the event stream. `errorDescription` is
+/// Errors from `CoachClient` and the event stream. `errorDescription` is
 /// written for people (show it as is).
 public enum CoachError: Error, LocalizedError, Hashable, Sendable {
     /// Couldn't build a URL for this path.
