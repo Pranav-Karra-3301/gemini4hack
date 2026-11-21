@@ -1,0 +1,414 @@
+[
+ {
+  "id": "s01_sunset_selfie",
+  "src": "img-1016.jpg",
+  "make": null,
+  "size": [
+   1536,
+   1152
+  ],
+  "context": {
+   "facing": "front",
+   "selfie": true,
+   "intent": "group",
+   "subject": "five friends at sunset",
+   "keep": [
+    "man in front, centre",
+    "man in teal shirt, left",
+    "man in green shirt, back left",
+    "man with glasses, back right",
+    "man in grey t-shirt, right"
+   ],
+   "scene": "sunset over the sea and the coastline",
+   "heard": "get all of us and the sunset",
+   "coach": [
+    "Raise the phone a little"
+   ],
+   "settings": {
+    "mode": "photo",
+    "lens": "wide",
+    "zoom": 1.0,
+    "iso": 40,
+    "shutter": 0.001,
+    "ev": 0.0,
+    "flash": "off"
+   }
+  }
+ },
+ {
+  "id": "s02_tunnel_selfie",
+  "src": "img-1216.jpg",
+  "make": null,
+  "size": [
+   1152,
+   1536
+  ],
+  "context": {
+   "facing": "front",
+   "selfie": true,
+   "intent": "group",
+   "subject": "friends in tree tunnel",
+   "keep": [
+    "man in sunglasses, front",
+    "man in black shirt, left",
+    "man with beard, back left",
+    "man in green shirt, back right",
+    "man in black t-shirt, right"
+   ],
+   "scene": "cypress tree tunnel and its vanishing point",
+   "heard": "I want the whole tunnel behind us",
+   "coach": [
+    "Hold the phone higher, tilt down"
+   ],
+   "settings": {
+    "mode": "photo",
+    "lens": "wide",
+    "zoom": 1.0,
+    "iso": 64,
+    "shutter": 0.004,
+    "ev": 0.0,
+    "flash": "off"
+   }
+  }
+ },
+ {
+  "id": "s03_bench_backs",
+  "src": "img-1408.jpg",
+  "make": null,
+  "size": [
+   1152,
+   1536
+  ],
+  "context": {
+   "facing": "back",
+   "selfie": false,
+   "intent": "group",
+   "subject": "three friends on bench",
+   "keep": [
+    "person on the left",
+    "man in the middle",
+    "man in white shirt, right"
+   ],
+   "scene": "Big Sur coastline",
+   "heard": "take one of them looking at the view",
+   "coach": [],
+   "settings": {
+    "mode": "photo",
+    "lens": "wide",
+    "zoom": 1.0,
+    "iso": 32,
+    "shutter": 0.0008,
+    "ev": 0.0,
+    "flash": "off"
+   }
+  }
+ },
+ {
+  "id": "s04_picnic_selfie",
+  "src": "img-1427.jpg",
+  "make": null,
+  "size": [
+   1536,
+   1152
+  ],
+  "context": {
+   "facing": "front",
+   "selfie": true,
+   "intent": "group",
+   "subject": "lunch with a view",
+   "keep": [
+    "man in sunglasses, right",
+    "man in striped shirt, middle",
+    "man with beard, back"
+   ],
+   "scene": "rocky beach and sea stacks",
+   "heard": "",
+   "coach": [],
+   "settings": {
+    "mode": "photo",
+    "lens": "wide",
+    "zoom": 1.0,
+    "iso": 40,
+    "shutter": 0.001,
+    "ev": 0.0,
+    "flash": "off"
+   }
+  }
+ },
+ {
+  "id": "s05_car_cliffs",
+  "src": "img-1457.jpg",
+  "make": null,
+  "size": [
+   1536,
+   1145
+  ],
+  "context": {
+   "facing": "back",
+   "selfie": false,
+   "intent": "group",
+   "subject": "two of us with the car",
+   "keep": [
+    "man on the car",
+    "man standing by the car",
+    "black car"
+   ],
+   "scene": "cliffs and the sea",
+   "heard": "get the car and the cliffs, we're over here",
+   "coach": [],
+   "settings": {
+    "mode": "photo",
+    "lens": "wide",
+    "zoom": 1.0,
+    "iso": 50,
+    "shutter": 0.002,
+    "ev": 0.0,
+    "flash": "off"
+   }
+  }
+ },
+ {
+  "id": "s06_railing_trio",
+  "src": "img-1491.jpg",
+  "make": null,
+  "size": [
+   1536,
+   1152
+  ],
+  "context": {
+   "facing": "back",
+   "selfie": false,
+   "intent": "group",
+   "subject": "three friends at railing",
+   "keep": [
+    "man in tan jacket",
+    "man in floral shirt",
+    "man in striped shirt"
+   ],
+   "scene": "waves and rocks",
+   "heard": "all three of us with the waves please",
+   "coach": [
+    "Step back a bit"
+   ],
+   "settings": {
+    "mode": "photo",
+    "lens": "wide",
+    "zoom": 1.0,
+    "iso": 40,
+    "shutter": 0.001,
+    "ev": 0.0,
+    "flash": "off"
+   }
+  }
+ },
+ {
+  "id": "s07_cliff_sign",
+  "src": "img-1931.jpg",
+  "make": null,
+  "size": [
+   1536,
+   1152
+  ],
+  "context": {
+   "facing": "back",
+   "selfie": false,
+   "intent": "group",
+   "subject": "two friends with sign",
+   "keep": [
+    "man in red shirt",
+    "man in black shirt",
+    "the 'stay back' sign"
+   ],
+   "scene": "",
+   "heard": "the funny one with the sign",
+   "coach": [],
+   "settings": {
+    "mode": "photo",
+    "lens": "wide",
+    "zoom": 1.0,
+    "iso": 32,
+    "shutter": 0.0005,
+    "ev": 0.0,
+    "flash": "off"
+   }
+  }
+ },
+ {
+  "id": "s08_road_hug",
+  "src": "img-2178.jpg",
+  "make": null,
+  "size": [
+   1536,
+   865
+  ],
+  "context": {
+   "facing": "back",
+   "selfie": false,
+   "intent": "",
+   "subject": "",
+   "keep": [],
+   "scene": "",
+   "heard": "quick, quick, everyone hug",
+   "coach": [],
+   "settings": {
+    "mode": "photo",
+    "lens": "wide",
+    "zoom": 1.0,
+    "iso": 64,
+    "shutter": 0.004,
+    "ev": 0.0,
+    "flash": "off"
+   }
+  }
+ },
+ {
+  "id": "d09_heads_cut",
+  "src": "img-1491.jpg",
+  "make": "heads_cut",
+  "size": [
+   1024,
+   768
+  ],
+  "context": {
+   "facing": "back",
+   "selfie": false,
+   "intent": "group",
+   "subject": "three friends at railing",
+   "keep": [
+    "man in tan jacket",
+    "man in floral shirt",
+    "man in striped shirt"
+   ],
+   "scene": "the sea",
+   "heard": "",
+   "coach": [],
+   "settings": {
+    "mode": "photo",
+    "lens": "tele",
+    "zoom": 2.0,
+    "iso": 50,
+    "shutter": 0.001,
+    "ev": 0.0,
+    "flash": "off"
+   }
+  }
+ },
+ {
+  "id": "d10_tilted_coast",
+  "src": "img-1408.jpg",
+  "make": "tilted_landscape",
+  "size": [
+   1198,
+   720
+  ],
+  "context": {
+   "facing": "back",
+   "selfie": false,
+   "intent": "landscape",
+   "subject": "",
+   "keep": [],
+   "scene": "",
+   "heard": "whoa, look at that",
+   "coach": [],
+   "settings": {
+    "mode": "photo",
+    "lens": "wide",
+    "zoom": 1.0,
+    "iso": 25,
+    "shutter": 0.0005,
+    "ev": 0.0,
+    "flash": "off"
+   }
+  }
+ },
+ {
+  "id": "d11_dark_portrait",
+  "src": "img-1931.jpg",
+  "make": "dark_portrait",
+  "size": [
+   799,
+   1066
+  ],
+  "context": {
+   "facing": "back",
+   "selfie": false,
+   "intent": "portrait",
+   "subject": "him in the red shirt",
+   "keep": [
+    "man in red shirt"
+   ],
+   "scene": "the ocean",
+   "heard": "just him this time",
+   "coach": [],
+   "settings": {
+    "mode": "photo",
+    "lens": "wide",
+    "zoom": 1.0,
+    "iso": 32,
+    "shutter": 0.0003,
+    "ev": -1.7,
+    "flash": "off"
+   }
+  }
+ },
+ {
+  "id": "d12_food",
+  "src": "img-1427.jpg",
+  "make": "food",
+  "size": [
+   768,
+   576
+  ],
+  "context": {
+   "facing": "back",
+   "selfie": false,
+   "intent": "food",
+   "subject": "my sandwich",
+   "keep": [
+    "sandwich"
+   ],
+   "scene": "",
+   "heard": "get the sandwich",
+   "coach": [],
+   "settings": {
+    "mode": "photo",
+    "lens": "wide",
+    "zoom": 1.0,
+    "iso": 50,
+    "shutter": 0.002,
+    "ev": 0.0,
+    "flash": "off"
+   }
+  }
+ },
+ {
+  "id": "d13_sign_doc",
+  "src": "img-1931.jpg",
+  "make": "sign_doc",
+  "size": [
+   479,
+   576
+  ],
+  "context": {
+   "facing": "back",
+   "selfie": false,
+   "intent": "document",
+   "subject": "warning sign",
+   "keep": [
+    "the whole sign"
+   ],
+   "scene": "",
+   "heard": "I want to read that sign later",
+   "coach": [],
+   "settings": {
+    "mode": "photo",
+    "lens": "tele",
+    "zoom": 2.0,
+    "iso": 50,
+    "shutter": 0.002,
+    "ev": 0.0,
+    "flash": "off"
+   }
+  }
+ }
+]
