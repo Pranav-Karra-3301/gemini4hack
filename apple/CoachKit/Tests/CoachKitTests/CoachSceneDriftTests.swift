@@ -138,6 +138,37 @@ import Testing
         #expect(pending.readyAnchor == nil)
     }
 
+    @Test func settleIgnoresOpticsChangeThenReanchors() throws {
+        let names = Self.names()
+        let a = try Self.view(Self.load(names[0])), b = try Self.view(Self.load(names[6]))
+        var drift = SceneDrift()
+        drift.anchorSubject(a)
+        drift.anchorReady(a)
+        #expect(drift.observe(a, at: 0) == nil)
+        drift.settle(until: 3)                             // set_camera zoom 2× at t = 1
+        drift.settle(until: 2.5)                           // never shortens the window
+        for t in stride(from: 1.0, to: 3.0, by: 0.25) { #expect(drift.observe(b, at: t) == nil) }
+        #expect(drift.isSettling && drift.subjectAnchor == a)
+        #expect(drift.observe(b, at: 3) == nil)            // first settled sample re-anchors
+        #expect(!drift.isSettling && drift.subjectAnchor == b && drift.readyAnchor == b)
+        for t in stride(from: 3.5, to: 8.0, by: 0.5) { #expect(drift.observe(b, at: t) == nil) }
+
+        // Without a ready anchor, settling leaves it unset; a real shift after settling still fires.
+        var plain = SceneDrift()
+        plain.anchorSubject(a)
+        plain.settle(until: 1)
+        #expect(plain.observe(a, at: 1) == nil)
+        #expect(plain.readyAnchor == nil && plain.subjectAnchor == a)
+        #expect(plain.observe(b, at: 2) == nil)
+        guard case .shift? = plain.observe(b, at: 3.5) else { Issue.record("expected a shift"); return }
+
+        var fresh = SceneDrift()
+        fresh.anchorSubject(a)
+        fresh.settle(until: 10)
+        fresh.reset()
+        #expect(!fresh.isSettling && fresh.subjectAnchor == nil && fresh.readyAnchor == nil)
+    }
+
     @Test func directionDecodesLeniently() throws {
         let json = #"{"subject":"soda can","intent":"object","new_shot":true,"score":6.4,"issues":["tilted"],"move":"closer","strength":"small","mode":"macro","ready":false,"tip":"get low","model":"g4","ms":812,"extra":1}"#
         let d = try JSONDecoder().decode(Direction.self, from: Data(json.utf8))
@@ -145,6 +176,17 @@ import Testing
         #expect(d.move == "closer" && d.mode == "macro" && d.ready == false && d.ms == 812)
         let partial = try JSONDecoder().decode(Direction.self, from: Data(#"{"score":"high","tip":"hold still"}"#.utf8))
         #expect(partial.score == nil && partial.tip == "hold still" && partial.subject == nil)
+    }
+
+    @Test func directionDecodesBoxesAndDropsInvalidOnes() throws {
+        let json = #"{"subject_box":[0.4,0.5,0.5,0.7],"target_box":[0.3,0.2,0.7,0.8],"level_deg":-2.5}"#
+        let d = try JSONDecoder().decode(Direction.self, from: Data(json.utf8))
+        #expect(d.subjectBox == [0.4, 0.5, 0.5, 0.7] && d.targetBox == [0.3, 0.2, 0.7, 0.8] && d.levelDeg == -2.5)
+        let bad = #"{"subject_box":[0.5,0.5,0.4,0.7],"target_box":[0,0,1.5,1],"level_deg":null}"#
+        let b = try JSONDecoder().decode(Direction.self, from: Data(bad.utf8))
+        #expect(b.subjectBox == nil && b.targetBox == nil && b.levelDeg == nil)
+        let short = try JSONDecoder().decode(Direction.self, from: Data(#"{"subject_box":[0.1,0.2,0.3]}"#.utf8))
+        #expect(short.subjectBox == nil)
     }
 }
 #endif

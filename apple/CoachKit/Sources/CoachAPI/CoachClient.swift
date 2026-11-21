@@ -294,6 +294,13 @@ public struct Direction: Decodable, Sendable, Equatable {
     /// photo, portrait, night, macro.
     public var mode: String?
     public var ready: Bool?
+    /// Where the subject is now: [x0, y0, x1, y1], 0…1 in the frame as sent (origin top-left).
+    public var subjectBox: [Double]?
+    /// Where the subject should be for a good composition, same format (bigger = get closer,
+    /// shifted = move it that way, same as `subjectBox` = hold).
+    public var targetBox: [Double]?
+    /// Roll error of the level lines in degrees (positive = turn the frame clockwise); nil = none.
+    public var levelDeg: Double?
     public var tip: String?
     public var model: String?
     public var ms: Int?
@@ -301,14 +308,19 @@ public struct Direction: Decodable, Sendable, Equatable {
     enum CodingKeys: String, CodingKey {
         case subject, intent, score, issues, move, strength, mode, ready, tip, model, ms
         case newShot = "new_shot"
+        case subjectBox = "subject_box"
+        case targetBox = "target_box"
+        case levelDeg = "level_deg"
     }
 
     public init(subject: String? = nil, intent: String? = nil, newShot: Bool? = nil, score: Int? = nil,
                 issues: [String]? = nil, move: String? = nil, strength: String? = nil, mode: String? = nil,
-                ready: Bool? = nil, tip: String? = nil, model: String? = nil, ms: Int? = nil) {
+                ready: Bool? = nil, subjectBox: [Double]? = nil, targetBox: [Double]? = nil,
+                levelDeg: Double? = nil, tip: String? = nil, model: String? = nil, ms: Int? = nil) {
         self.subject = subject; self.intent = intent; self.newShot = newShot; self.score = score
         self.issues = issues; self.move = move; self.strength = strength; self.mode = mode
-        self.ready = ready; self.tip = tip; self.model = model; self.ms = ms
+        self.ready = ready; self.subjectBox = subjectBox; self.targetBox = targetBox; self.levelDeg = levelDeg
+        self.tip = tip; self.model = model; self.ms = ms
     }
 
     /// Lenient: a field of the wrong type reads as nil instead of failing the whole answer.
@@ -319,7 +331,14 @@ public struct Direction: Decodable, Sendable, Equatable {
         score = opt(.score) ?? (opt(.score) as Double?).map { Int($0.rounded()) }
         issues = opt(.issues); move = opt(.move); strength = opt(.strength); mode = opt(.mode)
         ready = opt(.ready); tip = opt(.tip); model = opt(.model)
+        subjectBox = Self.box(opt(.subjectBox)); targetBox = Self.box(opt(.targetBox)); levelDeg = opt(.levelDeg)
         ms = opt(.ms) ?? (opt(.ms) as Double?).map { Int($0.rounded()) }
+    }
+
+    /// Four values inside 0…1 with x0 < x1 and y0 < y1, else nil.
+    static func box(_ b: [Double]?) -> [Double]? {
+        guard let b, b.count == 4, b.allSatisfy({ (0...1).contains($0) }), b[0] < b[2], b[1] < b[3] else { return nil }
+        return b
     }
 }
 

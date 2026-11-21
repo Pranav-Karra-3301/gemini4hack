@@ -22,6 +22,9 @@ import Foundation
 /// So shift = changed ≥ 0.50 and mean ≥ 0.10 catches every pair of different photos; big reframes
 /// (≥10 %) of the same subject can also trigger it, which the `[scene]` turn tells Gemini to ignore.
 /// Moved = changed ≥ 0.25 or mean ≥ 0.06 ignores hand shake (2 %) and exposure, catches ~5 % moves.
+///
+/// A mode, lens or zoom change (portrait zooms 2×, macro switches lens) jumps the picture without a
+/// new scene: `settle(until:)` ignores the view until then and re-anchors on the first sample after.
 public struct SceneDrift: Sendable {
     public enum Event: Sendable, Equatable {
         /// The view changed completely versus the subject anchor (numbers are vs that anchor).
@@ -43,6 +46,10 @@ public struct SceneDrift: Sendable {
     private var readyPending = false
     private var shiftSince: TimeInterval?
     private var movedSince: TimeInterval?
+    private var settleUntil: TimeInterval?
+
+    /// True while a `settle(until:)` window is open (no events, no anchors yet).
+    public var isSettling: Bool { settleUntil != nil }
 
     public init() {}
 
@@ -72,8 +79,31 @@ public struct SceneDrift: Sendable {
         shiftSince = nil
     }
 
+    /// The optics changed (mode, lens or zoom): report nothing until `until`, then take the first
+    /// sample as the new subject anchor, and as the ready anchor if one was set. Extends, never
+    /// shortens, an open window.
+    public mutating func settle(until: TimeInterval) {
+        settleUntil = max(settleUntil ?? until, until)
+        shiftSince = nil
+        movedSince = nil
+    }
+
+    /// Back to a fresh detector (session ended).
+    public mutating func reset() {
+        clearSubject()
+        clearReady()
+        settleUntil = nil
+    }
+
     /// Feeds the newest sent thumbnail. Returns at most one event (a shift wins over moved).
     public mutating func observe(_ thumb: LumaThumbnail, at now: TimeInterval) -> Event? {
+        if let until = settleUntil {
+            guard now >= until else { return nil }
+            settleUntil = nil
+            if subjectAnchor != nil || subjectPending { anchorSubject(thumb) }
+            if readyAnchor != nil || readyPending { anchorReady(thumb) }
+            return nil
+        }
         if subjectPending { subjectAnchor = thumb; subjectPending = false }
         if readyPending { readyAnchor = thumb; readyPending = false }
         var event: Event?

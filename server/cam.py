@@ -721,9 +721,26 @@ or crowding it, placed well, level, exposure fine). Do not chase perfection: a s
 more with the subject clear and whole is ready (a busy background is fine; it gets blurred from \
 depth after the shot). Never ask for "back" unless a person or the subject is cut off at an edge. Keep ready true for a frame that still matches the last \
 ready framing.
-- tip: what the coach should say next, at most 8 words, warm, one concrete action \
-("Closer, and drop to the can's height."). When ready just became true: "That's it, take it." \
-Use "" when the state's last_tip already says the same thing.
+- subject_box: where the subject is in this frame, as [ymin, xmin, ymax, xmax] on a 0-1000 \
+scale (origin top-left), tight around the whole subject.
+- target_box: where the subject should sit in the frame for a good photo, same format. The \
+phone draws both boxes and the user lines the subject up with the target, so make it match \
+your move: bigger than subject_box = get closer, shifted = move the subject that way in the \
+frame, the same as subject_box = hold (always when ready). Keep the whole target inside the \
+frame and placed well (centred for a single symmetric object, else on a third).
+- level_deg: how far the horizon or the level lines (table edge, shelf, door frame) are rolled, \
+in degrees: positive when the frame must turn clockwise to be level (lines slope down toward \
+the left), negative for counter-clockwise. null when the frame has no level lines.
+- tip: what the coach should say next, at most 8 words, warm, one concrete action phrased by \
+what the user will see, since the screen shows the target box: "Put the can in the box.", \
+"Fill the box with the can.", "Lower until the wall is behind it." Never use degrees, steps, \
+centimetres or any distance. When ready just became true: "That's it, take it." Use "" when \
+the state's last_tip already says the same thing.
+
+The camera state can also carry: heard = what the user said recently (honour a request in it, \
+e.g. "a portrait of my friend", over your own idea of the subject); scene_shift = true when the \
+phone just swung to a completely different view, so judge new_shot carefully and drop the old \
+plan if the subject changed.
 
 {DIRECTIONS_TEXT}
 
@@ -741,15 +758,35 @@ DIRECTOR_SCHEMA = {
         "mode": {"type": "STRING", "enum": MODES},
         "score": {"type": "INTEGER"},
         "ready": {"type": "BOOLEAN"},
+        "subject_box": {"type": "ARRAY", "items": {"type": "NUMBER"}},
+        "target_box": {"type": "ARRAY", "items": {"type": "NUMBER"}},
+        "level_deg": {"type": "NUMBER", "nullable": True},
         "tip": {"type": "STRING"},
     },
-    "required": ["subject", "intent", "new_shot", "issues", "move", "strength", "mode", "score", "ready", "tip"],
+    "required": ["subject", "intent", "new_shot", "issues", "move", "strength", "mode", "score", "ready",
+                 "subject_box", "target_box", "level_deg", "tip"],
     "propertyOrdering": ["subject", "intent", "new_shot", "issues", "move", "strength", "mode", "score", "ready",
-                         "tip"],
+                         "subject_box", "target_box", "level_deg", "tip"],
 }
 
 DIRECTOR_STATE_KEYS = ("mode", "state_line", "last_subject", "last_intent", "last_move", "last_tip", "ready",
                        "scene_shift", "heard", "facing")
+
+
+def _director_box(v) -> list[float] | None:
+    """The model's [ymin, xmin, ymax, xmax] on 0-1000 -> [x0, y0, x1, y1] on 0..1 (clamped,
+    ordered), or None if it isn't 4 numbers or has no area."""
+    if not isinstance(v, (list, tuple)) or len(v) != 4:
+        return None
+    n = [_clamp(x, 0, 1000) for x in v]
+    if any(x is None for x in n):
+        return None
+    y0, x0, y1, x1 = (x / 1000 for x in n)
+    x0, x1 = sorted((x0, x1))
+    y0, y1 = sorted((y0, y1))
+    if x1 - x0 < 0.01 or y1 - y0 < 0.01:
+        return None
+    return [round(x0, 3), round(y0, 3), round(x1, 3), round(y1, 3)]
 
 
 @router.post("/api/cam/director")
@@ -778,16 +815,24 @@ async def api_director(frame: UploadFile = File(...), state: str | None = Form(N
         if not isinstance(out, dict):
             raise gemini.GeminiError(f"director: expected a JSON object from {model}", 200)
         score = _clamp(out.get("score"), 0, 10)
+        ready = bool(out.get("ready"))
+        subject_box = _director_box(out.get("subject_box"))
+        # Ready means hold: no move, and the target is where the subject already is.
+        target_box = subject_box if ready else _director_box(out.get("target_box"))
+        level = _clamp(out.get("level_deg"), -45, 45)
         return {
             "subject": _words(out.get("subject"), 4),
             "intent": out.get("intent") if out.get("intent") in INTENTS else "other",
             "new_shot": bool(out.get("new_shot")) and bool(st.get("last_subject")),
             "issues": [_words(i, 10) for i in (out.get("issues") or []) if str(i).strip()][:3],
-            "move": out.get("move") if out.get("move") in MOVES else "hold",
+            "move": "hold" if ready else (out.get("move") if out.get("move") in MOVES else "hold"),
             "strength": out.get("strength") if out.get("strength") in ("small", "medium", "large") else "medium",
             "mode": out.get("mode") if out.get("mode") in MODES else "photo",
             "score": int(score) if score is not None else 0,
-            "ready": bool(out.get("ready")),
+            "ready": ready,
+            "subject_box": subject_box,
+            "target_box": target_box,
+            "level_deg": round(level, 1) if level is not None else None,
             "tip": _tip(out.get("tip")),
             "model": model,
             "ms": round((time.perf_counter() - t0) * 1000),

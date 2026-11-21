@@ -199,10 +199,18 @@ joints. Landscape: horizon on a third and level, something in the foreground. Do
 on, all four corners in. Never switch to the opposite direction on the next tick unless the \
 frame changed.
 
+The screen also shows a box around the subject and a target box where the subject should go, \
+so "put the can in the box" or "fill the box with the can" is the clearest thing to say. Phrase \
+every spoken tip by what the user will see ("Lower until the wall is behind it"), never in \
+degrees, steps, centimetres or any distance.
+
 Good enough is ready. Call shot_ready true as soon as the essentials are right (subject clear \
 and whole, no clutter crossing it, placed, level, exposure fine); don't chase perfection, and \
 after a couple of fixes that worked it is ready. Spoken tips are scarce: at most TWO per subject \
-before you call it ready (the arrow can keep guiding silently). Never say "almost", never repeat \
+before you call it ready (the arrow can keep guiding silently). A mode or settings change ("Switch \
+to portrait mode") is not one of the two tips: if the shot is still not ready after a mode \
+switch, your next turn gives the composition move ("Now put the can in the box"); never go \
+quiet after it. Never say "almost", never repeat \
 a tip, and never ask for a step back unless a person or the subject is actually cut off at an \
 edge. Editing afterwards (depth blur, light) will clean up a busy background, so a clear, \
 well-placed subject is enough. When it BECOMES ready, call shot_ready true AND \
@@ -241,7 +249,7 @@ different subject; guide with its next move; shot_ready with its ready; set_came
 best mode differs from the current one; say its tip in your own words (at most 8 words) only when \
 it is new or the plan changed, and only within your two-tip budget. Your own view wins only when the newest frame clearly shows the \
 user already made the move, or the user just asked for something else. When its ready turns to \
-yes, that is the "take it" moment.{extra}"""
+yes, say "take it" (still never call take_photo yourself).{extra}"""
 
 
 def _tool(name: str, description: str, props: dict | None = None, required: list[str] | None = None) -> dict:

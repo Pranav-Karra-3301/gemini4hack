@@ -54,6 +54,9 @@ final class CoachSession {
     private(set) var audio: LiveAudio?
     /// Round-trip stats for the settings sheet: token mint → live, last tool latency.
     private(set) var connectMs: Int?
+    /// The latest Director answer for the current view (subject / target boxes, level) for the
+    /// viewfinder overlay; nil after a scene shift until a fresh answer, and when the session ends.
+    private(set) var direction: Direction?
 
     var voiceOn = true {
         didSet { audio?.isOutputMuted = !voiceOn }
@@ -88,12 +91,22 @@ final class CoachSession {
     @ObservationIgnored private var pendingScene = false
     @ObservationIgnored private var sceneShiftForDirector = false
     @ObservationIgnored private var heardForDirector = ""
+    @ObservationIgnored private var heardForDirectorAt = Date.distantPast
+    @ObservationIgnored private var lastShiftAt: Date?
+    /// The Director's last non-empty tip for this subject (it answers "" when unchanged).
+    @ObservationIgnored private var lastTip = ""
     @ObservationIgnored private let readyHaptic = ReadyHaptic()
+    /// One ready haptic per subject / ready framing: re-armed by set_intent or a scene shift.
+    @ObservationIgnored private var readyHapticArmed = true
     @ObservationIgnored private var director: Director?
     @ObservationIgnored private var directionAtLastTick = 0
 
     static let tickInterval: TimeInterval = 4
     static let idleTickInterval: TimeInterval = 12
+    /// After a mode, lens or zoom change the picture jumps; drift ignores it this long.
+    static let opticsSettle: TimeInterval = 2
+    /// What the user said stays in the Director's state this long.
+    static let heardForDirectorTTL: TimeInterval = 20
 
     var isActive: Bool { phase == .live || phase == .connecting || phase == .reconnecting }
 
@@ -162,6 +175,22 @@ final class CoachSession {
         modelTurn = false
         guide = nil
         ready = false
+        director?.stop(); director = nil
+        directionAtLastTick = 0
+        direction = nil
+        drift.reset()
+        subjectSetAt = nil
+        viewChangedSinceSubject = false
+        readySetAt = nil
+        readyLostToMove = false
+        pendingScene = false
+        sceneShiftForDirector = false
+        heardText = ""
+        heardForDirector = ""
+        heardForDirectorAt = .distantPast
+        lastShiftAt = nil
+        lastTip = ""
+        readyHapticArmed = true
     }
 
     // MARK: Events
@@ -282,7 +311,10 @@ final class CoachSession {
             respond(call, ["ok": true])
         case .setCamera(let settings):
             guard let host else { return }
+            let optics = settings.mode != nil || settings.lens != nil || settings.zoom != nil
+            if optics { settleDrift() }
             let applied = await host.coachSetCamera(settings)
+            if optics { settleDrift() }     // counted from when the new optics are on the sensor
             lastCameraChange = Date()
             if let m = applied.mode { coachMode = m }
             var body: [String: Any] = ["ok": true]
@@ -295,7 +327,10 @@ final class CoachSession {
             subjectSetAt = Date()
             viewChangedSinceSubject = false
             pendingScene = false
-            drift.anchorSubject(live?.latestSentThumbnail)
+            lastTip = ""
+            // While optics settle, anchor on the first settled frame instead.
+            drift.anchorSubject(drift.isSettling ? nil : live?.latestSentThumbnail)
+            readyHapticArmed = true
             readyHaptic.prepare()
             respond(call, ["ok": true])
         case .userReaction(let r, let h):
@@ -309,8 +344,11 @@ final class CoachSession {
             readyLostToMove = false
             if r {
                 readySetAt = Date()
-                drift.anchorReady(live?.latestSentThumbnail)
-                if !wasReady { readyHaptic.fire() }
+                drift.anchorReady(drift.isSettling ? nil : live?.latestSentThumbnail)
+                if !wasReady, readyHapticArmed {
+                    readyHapticArmed = false
+                    readyHaptic.fire()
+                }
             } else {
                 drift.clearReady()
             }
@@ -358,6 +396,7 @@ final class CoachSession {
 
     /// The user's own dial change, sent as silent context after they settle (1.2 s).
     func noteUserChange(key: String, text: String) {
+        if ["zoom", "lens", "mode"].contains(key) { settleDrift() }
         pendingNotes[key] = text
         noteTask?.cancel()
         noteTask = Task { [weak self] in
@@ -384,7 +423,7 @@ final class CoachSession {
     private func tickIfQuiet() {
         guard phase == .live, let live else { return }
         let now = Date()
-        if !heardText.isEmpty { heardForDirector = heardText }
+        if !heardText.isEmpty { heardForDirector = heardText; heardForDirectorAt = now }
         ensureDirector(live)
         checkScene(live, now)
         let playing = audio?.isPlaying ?? false
@@ -406,13 +445,15 @@ final class CoachSession {
         let unanswered = lastUserSpeech > lastActivity && lastUserSpeech > lastTick
             && now.timeIntervalSince(lastUserSpeech) >= 1.2
         let freshDirection = (director?.count ?? 0) != directionAtLastTick
+            && !startedBefore(director?.latestStartedAt, lastShiftAt)
         let due = (now.timeIntervalSince(lastTick) >= Self.tickInterval
             && (sent != framesAtLastTick || now.timeIntervalSince(lastTick) >= Self.idleTickInterval))
             || (freshDirection && now.timeIntervalSince(lastTick) >= 3)
         let routine = due && now.timeIntervalSince(lastUserSpeech) >= 2 && now.timeIntervalSince(lastActivity) >= 1.5
         guard unanswered || routine else { return }
         var text = "[tick] " + contextBody()
-        if freshDirection, let d = director?.latest { text += directorBlock(d) }
+        viewChangedSinceSubject = false     // one-shot: this tick carried it
+        if freshDirection, let d = director?.latest { text += directorBlock(d, startedAt: director?.latestStartedAt) }
         directionAtLastTick = director?.count ?? 0
         live.sendText(text)
         #if DEBUG
@@ -520,6 +561,11 @@ final class CoachSession {
             if intent != nil { viewChangedSinceSubject = true }
             pendingScene = true
             sceneShiftForDirector = true
+            lastShiftAt = now
+            lastTip = ""
+            heardForDirector = ""
+            direction = nil
+            readyHapticArmed = true
             director?.runNow()
             #if DEBUG
             print(String(format: "CoachCam[live] +%dms scene shift (mean %.3f, changed %.2f)",
@@ -545,32 +591,60 @@ final class CoachSession {
             guard let self, let live, self.live === live, self.isActive else { return nil }
             return self.directorState()
         }
+        d.onAnswer = { [weak self] answer, startedAt in self?.directorAnswered(answer, startedAt: startedAt) }
         director = d
         d.start()
+    }
+
+    /// True if a request that started at `start` predates `event` (its frame is from before it).
+    private func startedBefore(_ start: Date?, _ event: Date?) -> Bool {
+        guard let event else { return false }
+        guard let start else { return true }
+        return start < event
+    }
+
+    /// A Director answer arrived. Answers for frames from before the last shift are ignored here
+    /// (the tick drops them too); the overlay and the tip memory follow the current view only.
+    private func directorAnswered(_ d: Direction, startedAt: Date) {
+        guard !startedBefore(startedAt, lastShiftAt) else { return }
+        direction = d
+        if lastShiftAt != nil, d.newShot == false { viewChangedSinceSubject = false }
+        if let tip = d.tip?.trimmingCharacters(in: .whitespacesAndNewlines), !tip.isEmpty,
+           !startedBefore(startedAt, subjectSetAt) {
+            lastTip = tip
+        }
+    }
+
+    /// Mode, lens or zoom changed: the picture jumps without a new scene. Drift re-anchors after.
+    private func settleDrift() {
+        drift.settle(until: Date().addingTimeInterval(Self.opticsSettle).timeIntervalSinceReferenceDate)
     }
 
     private func directorState() -> [String: Any] {
         let line = host?.coachStateLine ?? ""
         let shift = sceneShiftForDirector
         sceneShiftForDirector = false
+        let heard = Date().timeIntervalSince(heardForDirectorAt) <= Self.heardForDirectorTTL ? heardForDirector : ""
         return [
             "mode": Self.splitMode(line).mode ?? "",
             "state_line": line,
             "intent": intent?.rawValue ?? "",
             "subject": subject ?? "",
             "last_move": director?.latest?.move ?? "",
-            "last_tip": director?.latest?.tip ?? "",
+            "last_tip": lastTip,
             "ready": ready,
             "scene_shift": shift,
-            "heard": heardForDirector,
+            "heard": heard,
         ]
     }
 
     /// ` Director (Gemini 4, latest frame): shot object "soda can", score 6/10; issues: …; next move: …`
-    private func directorBlock(_ d: Direction) -> String {
+    /// "(NEW shot)" only when the request started after the subject was last set: an older answer
+    /// compares against the previous subject and would trigger a second set_intent.
+    private func directorBlock(_ d: Direction, startedAt: Date?) -> String {
         let current = Self.splitMode(host?.coachStateLine ?? "").mode
         var s = " Director (Gemini 4, latest frame): shot \(d.intent ?? "other") \"\(d.subject ?? "")\""
-        if d.newShot == true { s += " (NEW shot)" }
+        if d.newShot == true, !startedBefore(startedAt, subjectSetAt) { s += " (NEW shot)" }
         s += ", score \(d.score.map(String.init) ?? "?")/10"
         s += "; issues: " + ((d.issues ?? []).isEmpty ? "none" : (d.issues ?? []).joined(separator: "; "))
         s += "; next move: \(d.move ?? "hold") (\(d.strength ?? "small"))"
