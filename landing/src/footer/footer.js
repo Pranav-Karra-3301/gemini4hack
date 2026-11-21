@@ -159,7 +159,7 @@ export function mountFooter(el) {
     u.uWord.value = gl.wordTex;
     u.uWR.value.set(((W - word.w) / 2) * scale, (lay.wordCY - word.h / 2) * scale, word.w * scale, word.h * scale);
     gl.mainMat.uniforms.uWTex.value.set(1 / word.canvas.width, 1 / word.canvas.height);
-    gl.mainMat.uniforms.uBevel.value.set(word.sigma1 * 0.75, word.sigma2 * 0.12);
+    gl.mainMat.uniforms.uBevel.value = word.sigma * 0.5;
     return true;
   }
 
@@ -275,7 +275,7 @@ export function mountFooter(el) {
     const mainMat = quadMat(MAIN_FRAG, {
       uRays: { value: rtRays.texture },
       uWTex: { value: new Vector2(1, 1) },
-      uBevel: { value: new Vector2(1, 1) },
+      uBevel: { value: 1 },
     });
     const occScene = new Scene();
     occScene.add(new Mesh(quad, occMat));

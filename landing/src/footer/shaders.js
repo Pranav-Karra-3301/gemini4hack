@@ -24,11 +24,11 @@ const PALETTE = `
 #define PET_BODY ${lin('#6E4BD8')}
 #define PET_LIT ${lin('#9A7CF6')}
 #define PET_RIM ${lin('#C9B8FF')}
-#define BODY0 ${lin('#0E1229')}
-#define BODY1 ${lin('#0A0C1E')}
+#define BODY0 ${lin('#141320')}
+#define BODY1 ${lin('#0A0B16')}
 #define BODY2 ${lin('#06070E')}
-#define STONE ${lin('#8C8AA6')}
-#define SKYFILL ${lin('#3A4A9A')}
+#define FACE ${lin('#0A0B14')}
+#define ROSE ${lin('#A86A74')}
 `;
 
 export const QUAD_VERT = /* glsl */ `
@@ -86,7 +86,7 @@ void main() {
   fan = 0.15 + 0.85 * fan * fan;
   float disc = smoothstep(uSunR * 1.25, uSunR * 0.7, r);
   float glow = exp(-rn * 9.0);
-  vec3 c = CORE * disc * 1.6 + mix(EMBER, WARM, exp(-rn * 9.0)) * glow * 0.55 * fan;
+  vec3 c = CORE * disc * 1.6 + mix(WARM, CORE, exp(-rn * 14.0)) * glow * 0.5 * fan;
   gl_FragColor = vec4(c * (1.0 - occ) * uRise, 1.0);
 }
 `;
@@ -120,7 +120,7 @@ export const MAIN_FRAG = /* glsl */ `
 ${COMMON}
 uniform sampler2D uRays;
 uniform vec2 uWTex;     // wordmark texel size
-uniform vec2 uBevel;    // bevel strength for the narrow and wide blur
+uniform float uBevel;   // face normal strength from the narrow blur
 uniform float uHz;      // horizon y, device px
 uniform float uDpr;
 
@@ -154,7 +154,7 @@ vec3 shadeLayer(sampler2D tex, vec4 rect, vec2 p, vec3 body, float lod, float fa
 
   vec3 c = body;
   // translucency: light through thin petals near the edge, deep violet, only where the light is
-  c += mix(PET_SHADOW, PET_BODY, edge) * flo * light * (0.05 + 0.5 * edge * edge) * (0.55 + 0.45 * bump) * glowK;
+  c += mix(PET_SHADOW, PET_BODY, edge) * flo * light * (0.008 + 0.32 * edge * edge) * (0.55 + 0.45 * bump) * glowK;
   vec3 rimF = mix(PET_LIT, PET_RIM, clamp(rim * 1.4, 0.0, 1.0));
   vec3 rimL = mix(EMBER, WARM, clamp(rim, 0.0, 1.0)) * 0.22;
   // thin parts (stems, leaf tips) barely hold a rim; florets on a dome edge do
@@ -164,35 +164,40 @@ vec3 shadeLayer(sampler2D tex, vec4 rect, vec2 p, vec3 body, float lod, float fa
   return c;
 }
 
-vec4 wordmark(vec2 p) {
+// Wordmark: near-ink matte letters (a hint of the sky behind) with a thin, crisp rim of sunlight on the edges
+// that face the sun. The rim lives in the narrow band where the small blur falls off inside each glyph.
+vec4 wordmark(vec2 p, vec3 sky) {
   vec2 uv = (p - uWR.xy) / uWR.zw;
   float inside = inRect(uv);
   if (inside < 0.5) return vec4(0.0);
   vec4 w = textureLod(uWord, uv, 0.0);
   float a = w.r;
   if (a < 0.002) return vec4(0.0);
-  vec2 tx = vec2(uWTex.x * 1.5, 0.0);
-  vec2 ty = vec2(0.0, uWTex.y * 1.5);
-  vec4 wr = textureLod(uWord, uv + tx, 0.0);
-  vec4 wl = textureLod(uWord, uv - tx, 0.0);
-  vec4 wd = textureLod(uWord, uv + ty, 0.0);
-  vec4 wu = textureLod(uWord, uv - ty, 0.0);
-  vec2 g = vec2(wr.g - wl.g, wd.g - wu.g) * uBevel.x + vec2(wr.b - wl.b, wd.b - wu.b) * uBevel.y;
-  vec3 n = normalize(vec3(-g, 1.0));
+  vec2 tx = vec2(uWTex.x, 0.0);
+  vec2 ty = vec2(0.0, uWTex.y);
+  float hr = textureLod(uWord, uv + tx, 0.0).g;
+  float hl = textureLod(uWord, uv - tx, 0.0).g;
+  float hd = textureLod(uWord, uv + ty, 0.0).g;
+  float hu = textureLod(uWord, uv - ty, 0.0).g;
+  vec2 g = vec2(hr - hl, hd - hu);
+  vec2 nOut = -g / (length(g) + 1e-5);
 
   vec2 toS = uSun - p;
   float dist = length(toS) / uRes.y;
   toS /= max(length(toS), 1e-3);
-  // key: the low sun, below and a little behind the letters (raking, so the faces stay dark)
-  vec3 Lk = normalize(vec3(toS, 0.03));
-  float key = max(dot(n, Lk), 0.0);
-  float kI = uRise * 1.5 * exp(-dist * 1.25);
-  // fill: the cool sky dome above and in front
-  vec3 Lf = normalize(vec3(0.0, -0.75, 0.66));
-  float fill = max(dot(n, Lf), 0.0);
-  // a little warm bounce from the lit field onto the lower faces
+  float kI = pow(uRise, 1.6) * 1.7 * exp(-dist * 1.1);
+
+  float edge = 1.0 - smoothstep(0.5, 0.94, w.g);
+  float facing = max(dot(nOut, toS), 0.0);
+  float rim = edge * edge * pow(facing, 1.4) * kI;
+
+  // a whisper of face shading from the same tight bevel: engraved, not inflated
+  vec3 n = normalize(vec3(-g * uBevel, 1.0));
+  float fill = max(dot(n, vec3(0.0, -0.75, 0.66)), 0.0);
   float low = clamp((p.y - uWR.y) / uWR.w, 0.0, 1.0);
-  vec3 c = STONE * (SKYFILL * fill * (0.035 + 0.04 * uRise) + WARM * key * kI + EMBER * low * low * 0.02 * uRise);
+  vec3 c = (FACE + sky * 0.1) * (0.8 + 0.3 * fill);
+  c += WARM * low * low * 0.006 * kI;
+  c += mix(WARM, CORE, clamp(rim - 0.35, 0.0, 1.0)) * rim * 1.1;
   return vec4(c, a);
 }
 
@@ -213,16 +218,22 @@ void main() {
   float hz = uHz / H;
   float glowK = 0.12 + 0.88 * uRise;
 
-  // sky: night ink at the top, indigo, then a low horizon glow that warms around the sun
+  // sky: night ink at the top into deep navy, then at the horizon amber -> ember -> a thin dusty rose -> navy
   float k1 = clamp(v / hz, 0.0, 1.2);
-  vec3 c = mix(INK, INDIGO, smoothstep(0.08, 0.8, k1));
-  c = mix(c, HORIZON, pow(clamp(k1, 0.0, 1.0), 3.2) * (0.3 + 0.7 * uRise));
+  vec3 c = mix(INK, INDIGO, smoothstep(0.05, 0.85, k1));
+  c = mix(c, HORIZON, pow(clamp(k1, 0.0, 1.0), 5.0) * 0.4);
   vec2 q = (p - uSun) / H;
-  // warm light stays low and close to the sun (gaussian falloffs, so the upper sky stays ink and indigo)
-  float band = exp(-(q.y * q.y) / 0.006) * exp(-(q.x * q.x) / 0.5);
-  c += EMBER * band * 0.2 * glowK;
+  float above = max((uHz - p.y) / H, 0.0);
+  float dx = (p.x - uSun.x) / uRes.x;
+  float spread = exp(-(dx * dx) / 0.12);
+  vec3 dawn = mix(WARM, EMBER, smoothstep(0.0, 0.03, above));
+  dawn = mix(dawn, ROSE, smoothstep(0.025, 0.07, above));
+  float band = exp(-above / 0.038) * (0.3 + 0.7 * spread);
+  c += dawn * band * 0.3 * glowK;
   float qd = length(q * vec2(0.75, 1.0));
   c += WARM * (exp(-(qd * qd) / 0.018) * 0.2 + exp(-qd * 14.0) * 0.08) * uRise;
+
+  vec3 skyC = c; // the sky alone, before the sun: what the far row's haze veil is made of
 
   // a few faint stars that fade out at dawn
   vec2 sc = floor(p / (3.0 * uDpr));
@@ -236,23 +247,26 @@ void main() {
   vec3 discC = mix(WARM, CORE, smoothstep(uSunR * 1.05, uSunR * 0.15, r));
   c = mix(c, discC, disc);
   float rs = r / uSunR;
-  c += mix(EMBER, WARM, exp(-rs * 0.6)) * (exp(-rs * 0.9) * 0.55 + exp(-(rs * rs) / 30.0) * 0.12) * uRise * (1.0 - disc);
+  c += mix(EMBER, WARM, exp(-rs * 0.6)) * (exp(-rs * 0.9) * 0.55 + exp(-(rs * rs) / 10.0) * 0.1) * uRise * (1.0 - disc);
 
-  vec3 rays = texture(uRays, vUv).rgb * (0.25 + 0.75 * smoothstep(0.0, hz, v));
-  c += rays * 0.42;
+  vec3 rays = texture(uRays, vUv).rgb * (0.12 + 0.88 * smoothstep(0.22, hz, v));
+  c += rays * 0.34;
 
-  vec4 wm = wordmark(p);
+  vec4 wm = wordmark(p, c);
   c = mix(c, wm.rgb, wm.a * (0.62 + 0.38 * uRise));
 
   // warm haze along the horizon, drifting
   float hzd = (p.y - uHz) / H;
-  float haze = exp(-abs(hzd) * 11.0) * (0.75 + 0.25 * sin(p.x / H * 5.0 + uTime * 0.07 + sin(p.y / H * 9.0 - uTime * 0.05)));
-  vec3 hazeC = (HORIZON * 0.35 + mix(EMBER, WARM, band) * band * 0.35) * haze * glowK;
+  float haze = exp(-abs(hzd) * (hzd > 0.0 ? 20.0 : 11.0)) * (0.75 + 0.25 * sin(p.x / H * 5.0 + uTime * 0.07 + sin(p.y / H * 9.0 - uTime * 0.05)));
+  vec3 hazeC = mix(EMBER, WARM, spread) * (0.1 + 0.25 * spread) * haze * glowK;
 
+  // the farthest row is mostly haze: a darker veil of the horizon glow behind it
   float s0, s1, s2;
-  vec3 l0 = shadeLayer(uL0, uR0, p, BODY0 + hazeC * 0.3, 2.0, 2.6, 0.9, 1.2, s0);
+  float below = max(hzd, 0.0);
+  vec3 veil = mix(skyC, BODY0, clamp(0.55 + below * 7.0, 0.55, 0.94));
+  vec3 l0 = shadeLayer(uL0, uR0, p, veil + hazeC * 0.4, 2.0, 2.6, 0.35, 0.5, s0);
   c = mix(c, l0, s0);
-  c += hazeC * 0.3;
+  c += hazeC * 0.35;
   vec3 l1 = shadeLayer(uL1, uR1, p, BODY1, 2.6, 4.0, 1.25, 1.0, s1);
   c = mix(c, l1, s1);
   c += hazeC * 0.18;

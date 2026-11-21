@@ -2,7 +2,7 @@
 // "data" canvases that the shaders read, never shown directly.
 //   Field layer (opaque black canvas, so channels stay exact): R = floret bump height,
 //   G = silhouette coverage, B = floret mask (1 on florets, 0 on leaves and stems).
-//   Wordmark: R = sharp coverage, G = narrow blur (crisp bevel), B = wide blur (soft rounding).
+//   Wordmark: R = sharp coverage, G = narrow blur (a tight bevel band just inside each glyph edge).
 
 const C_STEM = 'rgb(12,255,0)';
 const C_FOLIAGE = 'rgb(18,255,0)';
@@ -186,8 +186,8 @@ function bush(ctx, rand, spr, sprCss, x, y, R, baseY, o) {
     const len = R * (0.95 + rand() * 0.6);
     leaf(ctx, lx, ly, ang, len, len * (0.5 + rand() * 0.12));
   }
-  // a leafy mound under the heads, so the bush never reads as a head on a bare stalk
-  if (o.leafTo) {
+  // a leafy mound under the heads (front framing bushes)
+  if (o.mound) {
     ctx.fillStyle = C_FOLIAGE;
     ctx.beginPath();
     ctx.moveTo(x - R * 1.3, o.leafTo + R);
@@ -196,11 +196,14 @@ function bush(ctx, rand, spr, sprCss, x, y, R, baseY, o) {
     ctx.quadraticCurveTo(x + R * 1.2, y + R * 0.7, x + R * 1.3, o.leafTo + R);
     ctx.closePath();
     ctx.fill();
+  }
+  // a few broad leaves off the main stem, alternating sides
+  if (o.stemTo) {
     let side = rand() < 0.5 ? -1 : 1;
-    for (let ly = y + R * 1.1; ly < o.leafTo; ly += R * (0.45 + rand() * 0.25)) {
-      const len = R * (0.75 + rand() * 0.45);
-      const ang = side > 0 ? -0.1 + rand() * 0.7 : Math.PI + 0.1 - rand() * 0.7;
-      leaf(ctx, x + side * R * (0.55 + rand() * 0.45), ly, ang, len, len * 0.52);
+    for (let ly = y + R * 1.25, i = 0; ly < o.stemTo && i < o.stemLeaves; ly += R * (0.8 + rand() * 0.4), i++) {
+      const len = R * (0.85 + rand() * 0.35);
+      const ang = side > 0 ? 0.05 + rand() * 0.55 : Math.PI - 0.05 - rand() * 0.55;
+      leaf(ctx, x, ly, ang, len, len * 0.56);
       side = -side;
     }
   }
@@ -276,23 +279,25 @@ export function buildField(W, H, dpr, L) {
     layers.push(ly);
   }
 
-  // mid: bushes rising and falling across the field over a leafy mass
+  // mid: fewer, larger heliotropes on clear stems with a few broad leaves
   {
     const rand = rng(23);
-    const R0 = 34 * U;
+    const R0 = (W >= 768 ? 44 : 34) * U;
     const top = hz - R0 * 2.8;
     const ly = layerCanvas(x0, top, x1 - x0, H - top, dpr);
     const { ctx } = ly;
     const sprCss = Math.max(2.1, R0 * 0.14);
     const spr = floretSprites(sprCss * dpr, rand);
-    const leafTo = hz + H * 0.042 + R0 * 0.5;
-    foliage(ctx, rand, x0, x1, leafTo, H, R0);
+    const band = hz + H * 0.16;
+    foliage(ctx, rand, x0, x1, band, H, R0 * 0.7);
     let x = x0 + rand() * R0;
     while (x < x1) {
-      const R = R0 * (0.75 + rand() * 0.5);
-      const y = hz + H * 0.045 + wave(x, 2.3) * H * 0.03 + (rand() - 0.5) * R0 * 1.1;
-      bush(ctx, rand, spr, sprCss, x, y, R, H, { heads: [2, 4], leaves: 5, front: 1, leafTo });
-      x += R * (1.7 + rand() * 1.8);
+      const R = R0 * (0.8 + rand() * 0.4);
+      // keep the sun's disc clear of a head sitting right on top of it
+      if (Math.abs(x - W / 2) < R * 0.8) x = W / 2 + Math.sign(x - W / 2 || 1) * R * 0.8;
+      const y = hz + H * 0.055 + wave(x, 2.3) * H * 0.025 + (rand() - 0.5) * R0 * 0.7;
+      bush(ctx, rand, spr, sprCss, x, y, R, H, { heads: [0, 2], leaves: 2, front: 0, stemTo: band, stemLeaves: 2 });
+      x += R * (2.7 + rand() * 1.3);
     }
     layers.push(ly);
   }
@@ -300,7 +305,7 @@ export function buildField(W, H, dpr, L) {
   // front: big, near-black bushes that frame the scene, tall at the edges and low in the middle
   {
     const rand = rng(37);
-    const R0 = 58 * U;
+    const R0 = (W >= 768 ? 64 : 58) * U;
     const top = H * 0.48 - R0;
     const ly = layerCanvas(x0, top, x1 - x0, H - top, dpr);
     const { ctx } = ly;
@@ -323,7 +328,7 @@ export function buildField(W, H, dpr, L) {
 
 /**
  * Wordmark height map, `targetW` CSS px wide (ink bounds). Returns the data canvas plus its CSS size and the
- * two blur sigmas in device px (the shader scales its bevel normals by them).
+ * blur sigma in device px (the shader scales its bevel normals by it).
  */
 export function buildWordmark(text, family, targetW, dpr) {
   const m = makeCanvas(8, 8).getContext('2d');
@@ -344,8 +349,7 @@ export function buildWordmark(text, family, targetW, dpr) {
   const ch = Math.ceil(hCss * dpr);
   const ox = pad * dpr + t.actualBoundingBoxLeft;
   const oy = pad * dpr + t.actualBoundingBoxAscent;
-  const blur1 = Math.max(2, size * 0.02 * dpr);
-  const blur2 = Math.max(6, size * 0.11 * dpr);
+  const blur1 = Math.max(2, size * 0.013 * dpr);
 
   const pass = (blur) => {
     const c = makeCanvas(cw, ch);
@@ -367,7 +371,6 @@ export function buildWordmark(text, family, targetW, dpr) {
   };
   const a = pass(0);
   const b1 = pass(blur1);
-  const b2 = pass(blur2);
   const canvas = makeCanvas(cw, ch);
   const octx = canvas.getContext('2d');
   const img = octx.createImageData(cw, ch);
@@ -375,9 +378,9 @@ export function buildWordmark(text, family, targetW, dpr) {
   for (let i = 0; i < d.length; i += 4) {
     d[i] = a[i];
     d[i + 1] = b1[i];
-    d[i + 2] = b2[i];
+    d[i + 2] = 0;
     d[i + 3] = 255;
   }
   octx.putImageData(img, 0, 0);
-  return { canvas, w: wCss, h: hCss, size, sigma1: blur1 / 2, sigma2: blur2 / 2 };
+  return { canvas, w: wCss, h: hCss, size, sigma: blur1 / 2 };
 }
