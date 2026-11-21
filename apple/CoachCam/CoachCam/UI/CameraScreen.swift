@@ -282,7 +282,7 @@ private struct GuideGlow: View {
 }
 
 /// The few marks on the card: the live dot (top-left), the last shot (bottom-left), the frame
-/// aspect (bottom-right) and the coach's yellow suggestion tag (top-centre as the user holds the
+/// aspect (bottom-right) and the coach's yellow suggestion tag (bottom-centre as the user holds the
 /// phone). Marks stay put when the phone turns; their content turns to face the user.
 private struct ViewfinderHUD: View {
     @Environment(StageFX.self) private var fx
@@ -293,8 +293,9 @@ private struct ViewfinderHUD: View {
         ZStack {
             UserFrame {
                 SuggestionTag(feed: suggestion)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .padding(.top, 14)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.horizontal, 48)
+                    .padding(.bottom, 20)
             }
             CoachDot()
                 .opacity(fx.dot)
