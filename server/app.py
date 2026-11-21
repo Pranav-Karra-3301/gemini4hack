@@ -18,6 +18,7 @@ import socket
 import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -177,16 +178,40 @@ def _proxied(headers, client_host: str | None = None) -> bool:
     return not (_is_loopback(client_host) and all(_is_loopback(h) for h in hops))
 
 
+def _other_site(headers) -> bool:
+    """A browser request on behalf of a site that isn't this Mac: an `Origin` that isn't
+    localhost / loopback (or is "null"), or a `Host` / `X-Forwarded-Host` (Vite's xfwd) that
+    isn't, which is how a DNS-rebinding page shows up (its same-origin fetches send no Origin).
+    Every coach page is served from localhost and calls /api through Vite, so such a request
+    must not get the loopback exemption (it could read /api/pair's token or open paid Live
+    sessions)."""
+    for name in ("origin", "host", "x-forwarded-host"):
+        value = headers.get(name)
+        if not value:
+            continue
+        if name != "origin":
+            value = "//" + value.split(",")[0].strip()
+        try:
+            host = urlsplit(value).hostname
+        except ValueError:
+            return True
+        if not (host and _is_loopback(host)):
+            return True
+    return False
+
+
 def _same(a: str, b: str) -> bool:
     return bool(a) and hmac.compare_digest(a.encode(), b.encode())
 
 
 def token_ok(headers, cookies, client_host: str | None = None) -> bool:
-    """Loopback requests pass. Tunnel requests (cf-connecting-ip / forwarded) and LAN requests (a
+    """Loopback requests pass, unless a web page from another site sent them (`_other_site`).
+    Tunnel requests (cf-connecting-ip / forwarded) and LAN requests (a
     non-loopback peer) need the coach token as `Authorization: Bearer <token>` or cookie
     `coach_k`. `client_host` None means the caller didn't say; then only the proxy rule applies
     (the ASGI gate below always passes the peer)."""
-    if not _proxied(headers, client_host) and (client_host is None or _is_loopback(client_host)):
+    if (not _proxied(headers, client_host) and not _other_site(headers)
+            and (client_host is None or _is_loopback(client_host))):
         return True
     token = coach_token()
     if not token:
@@ -197,8 +222,8 @@ def token_ok(headers, cookies, client_host: str | None = None) -> bool:
 
 
 def is_local(headers, client_host: str | None) -> bool:
-    """A direct loopback request (the Mac itself), not a tunnel or LAN client."""
-    return _is_loopback(client_host) and not _proxied(headers, client_host)
+    """A direct loopback request (the Mac itself), not a tunnel, LAN client or other site's page."""
+    return _is_loopback(client_host) and not _proxied(headers, client_host) and not _other_site(headers)
 
 
 class TokenGate:
@@ -232,9 +257,9 @@ DEPTH_HEADERS = [
     "X-Splat-Width", "X-Splat-Height", "X-Splat-Focal-Px", "X-Splat-Focal-Source", "X-Splat-Ms",
     "X-Splat-Cache",
 ]
-app.add_middleware(
-    CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
-    expose_headers=DEPTH_HEADERS,
+app.add_middleware(  # pages on this Mac only; the coach pages are same-origin through Vite anyway
+    CORSMiddleware, allow_origin_regex=r"https?://(localhost|127\.\d+\.\d+\.\d+|\[::1\])(:\d+)?",
+    allow_methods=["*"], allow_headers=["*"], expose_headers=DEPTH_HEADERS,
 )
 
 
