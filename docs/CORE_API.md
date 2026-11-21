@@ -153,9 +153,11 @@ Storage: `server/library/<id>/` (gitignored) with `original.jpg` (as uploaded, u
 ```
 → 201 with the shot record (~0.1 s). Errors: 400 (no or empty `image`, bad `meta`; `meta` must be
 a JSON object under 16 KB), 413 (over 60 MB). Core then processes in the background, newest shot
-first, in two phases: (depth ∥ score ∥ regions) → (masks ∥ suggest). Score and regions don't need
-depth, so they overlap Depth Pro; suggest doesn't need masks (region depths come from their boxes
-until masks are done), so it overlaps SAM. GPU stages (Depth Pro, SAM, SHARP) share one lock. Unfinished
+first, in two phases: (depth ∥ score ∥ regions) → (masks ∥ suggest). Score and regions overlap
+Depth Pro; regions wait up to `REGIONS_DEPTH_WAIT_S` (2 s) for the shot's depth and put a short
+depth summary (near/far, a 3×3 grid of distances) in their prompt, or go without it. Suggest
+doesn't need masks (region depths come from their boxes until masks are done), so it overlaps
+SAM. GPU stages (Depth Pro, SAM, SHARP) share one lock. Unfinished
 stages resume after a restart. SHARP splats only on request: `POST /api/shots/{id}/splat` → 202
 with the record (heavy: 7–12 s and ~9 GB, one at a time; already done → 200).
 

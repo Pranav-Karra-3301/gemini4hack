@@ -46,6 +46,10 @@ Headers (all exposed): `X-Depth-Width`, `X-Depth-Height`, `X-Depth-Min`, `X-Dept
 ```
 Exactly 3 regions. `box` is normalized 0..1 of the image, origin top-left. `tag` is `"remove"`
 (distracting, crop or clean it) or `"focus"` (the subject or light worth building around).
+The photo is treated as already taken: every `note` is an edit (crop, tone, color, subject or
+background light, depth blur, vignette), never "move", "wait" or "reshoot". Core runs Depth Pro on
+the same bytes first (cached, so a parallel `/api/depth` call shares it) and puts a short depth
+summary in the prompt; if depth fails, regions still answer without it.
 
 ### `/api/score`
 ```json
