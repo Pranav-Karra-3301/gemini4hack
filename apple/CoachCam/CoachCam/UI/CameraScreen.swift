@@ -14,7 +14,7 @@ struct CameraScreen: View {
     @State private var fx = StageFX()
     @State private var tilt = DeviceTilt()
     @State private var suggestion = SuggestionFeed()
-    static let panelHeight: CGFloat = 252
+    static let panelHeight: CGFloat = 296
 
     var body: some View {
         @Bindable var app = app
@@ -43,6 +43,7 @@ struct CameraScreen: View {
         .onDisappear { tilt.stop() }
         .onChange(of: scenePhase) { _, p in if p == .active { tilt.start() } else if p == .background { tilt.stop() } }
         .onChange(of: app.coach.caption) { _, c in suggestion.feed(c) }
+        .onChange(of: app.coach.hintSerial) { _, _ in suggestion.pin(app.coach.hint) }
         .onChange(of: app.shutterCount) { _, _ in
             fx.shot(lastThumb: app.shots.lastThumb, mockFrame: app.camera.isMock ? app.camera.mockFrame : nil)
         }
@@ -396,6 +397,13 @@ private struct InstrumentPanel: View {
                     .clipped()
                     .modifier(RollIn(k: fx.drums))
                 hairline
+                ZoomRuler(zoom: Binding(get: { app.zoom }, set: { app.userZoom($0) }),
+                          range: app.camera.snapshot.zoomRange, stops: zoomStops, actor: app.zoomActor)
+                    .frame(height: 44)
+                    .frame(height: 43)
+                    .clipped()
+                    .modifier(RollIn(k: fx.drums))
+                hairline
                 Spacer(minLength: 0)
             }
             .opacity(scanning ? 0.3 : 1)
@@ -404,7 +412,7 @@ private struct InstrumentPanel: View {
                 .opacity(fx.keys)
                 .offset(y: 12 * (1 - fx.keys))
                 .frame(height: 124)
-                .offset(y: 128)
+                .offset(y: 172)
         }
         .instrumentGlyphAngle(.degrees(tilt.angle))
     }
@@ -413,6 +421,12 @@ private struct InstrumentPanel: View {
     private var hairline: some View {
         Rectangle().fill(GXColor.hairline).frame(height: 1)
             .scaleEffect(x: fx.hairlines, y: 1, anchor: .leading)
+    }
+
+    /// Zoom detents: 0.5× / 1× / 2× plus each lens this iPhone has (5× tele on a 15 Pro Max).
+    private var zoomStops: [Double] {
+        let r = app.camera.snapshot.zoomRange
+        return Set([0.5, 1, 2] + app.camera.snapshot.lenses.values).filter { r.contains($0) }.sorted()
     }
 
     private func drum(_ key: KeyPath<AppModel, InstrumentValue>) -> Binding<InstrumentValue> {

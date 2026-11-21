@@ -22,27 +22,45 @@ final class VoiceEdit {
     /// The final transcript of one hold (may be empty), shortly after release.
     @ObservationIgnored var onText: ((String) -> Void)?
 
-    @ObservationIgnored private let engine = AVAudioEngine()
+    /// A fresh engine per hold: its input node reads the session's current format (a stale input
+    /// format after the coach's Listener or the Speaker changed the session can't install a tap).
+    @ObservationIgnored private var engine: AVAudioEngine?
     @ObservationIgnored private let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     @ObservationIgnored private var request: SFSpeechAudioBufferRecognitionRequest?
     @ObservationIgnored private var task: SFSpeechRecognitionTask?
     @ObservationIgnored private var latest = ""
     @ObservationIgnored private var holding = false
-    @ObservationIgnored private var delivered = false
+    @ObservationIgnored private var delivered = true
     @ObservationIgnored private var serial = 0
     @ObservationIgnored private let clip = ClipBuffer(seconds: 6)
+
+    /// Asks for speech + mic permission ahead of the first hold (the viewer calls this when it
+    /// opens), so the first hold isn't spent on the permission alerts.
+    func prepare() {
+        Task { _ = await Self.authorize() }
+    }
 
     /// Finger down: open the mic (asks for speech + mic permission the first time).
     func begin() {
         guard !isListening else { return }
+        // A previous hold still waiting on its final transcript: hand over what it has now.
+        if !delivered { deliver() }
         holding = true
         Speaker.shared.stop()
         Task {
-            guard await Self.authorize(), holding else { return }
+            let access = await Self.authorize()
+            guard access.mic else {
+                Self.log.error("Voice: microphone permission denied; can't listen")
+                return
+            }
+            guard holding else {
+                Self.log.notice("Voice: released before the mic opened")
+                return
+            }
             do {
-                try start()
+                try start(speech: access.speech)
             } catch {
-                Self.log.error("Mic failed: \(error.localizedDescription, privacy: .public)")
+                Self.log.error("Voice: mic failed: \(error.localizedDescription, privacy: .public)")
                 teardown()
             }
         }
@@ -52,14 +70,22 @@ final class VoiceEdit {
     func end() {
         holding = false
         guard isListening else { return }
+        let frames = clip.frames
         request?.endAudio()
         stopAudio()
-        onRelease?(clip.wav())
+        let wav = clip.wav()
+        Self.log.notice("Voice release: \(frames) frames (\(String(format: "%.1f", self.clip.duration)) s), clip \(wav?.count ?? 0) bytes")
+        onRelease?(wav)
+        guard task != nil else {
+            deliver()   // no recognizer: no transcript coming
+            return
+        }
         // The final result usually lands within a few hundred ms; don't wait forever.
         let s = serial
         Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(1200))
+            try? await Task.sleep(for: .milliseconds(1500))
             guard let self, self.serial == s else { return }
+            Self.log.notice("Voice: no final transcript after 1.5 s; using the last partial")
             self.deliver()
         }
     }
@@ -71,25 +97,41 @@ final class VoiceEdit {
         teardown()
     }
 
-    private func start() throws {
-        guard let recognizer, recognizer.isAvailable else { throw VoiceError.unavailable }
+    private func start(speech: Bool) throws {
         serial += 1
         latest = ""
         delivered = false
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
-        try session.setActive(true, options: .notifyOthersOnDeactivation)
+        // Same category and options as the Speaker and the coach's Listener: no route change, so
+        // a line the Speaker plays right after isn't cut by a session reconfiguration.
+        if session.category != .playAndRecord || !session.categoryOptions.contains(.defaultToSpeaker) {
+            try session.setCategory(.playAndRecord, mode: .default,
+                                    options: [.defaultToSpeaker, .allowBluetoothA2DP, .mixWithOthers])
+        }
+        try session.setActive(true)
 
-        let req = SFSpeechAudioBufferRecognitionRequest()
-        req.shouldReportPartialResults = true
-        if recognizer.supportsOnDeviceRecognition { req.requiresOnDeviceRecognition = true }
-        req.contextualStrings = ["warmer", "cooler", "brighter", "darker", "more contrast", "less contrast",
-                                 "blur the background", "brighter face", "more vibrant", "reset"]
-        request = req
-
+        let engine = AVAudioEngine()
+        self.engine = engine
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else { throw VoiceError.noInput }
         clip.reset(sampleRate: format.sampleRate)
+
+        var req: SFSpeechAudioBufferRecognitionRequest?
+        if speech, let recognizer, recognizer.isAvailable {
+            let r = SFSpeechAudioBufferRecognitionRequest()
+            r.shouldReportPartialResults = true
+            r.taskHint = .dictation
+            // On device when this iPhone can; otherwise Apple's server.
+            r.requiresOnDeviceRecognition = recognizer.supportsOnDeviceRecognition
+            r.contextualStrings = ["warmer", "cooler", "brighter", "darker", "more contrast", "less contrast",
+                                   "blur the background", "brighter face", "more vibrant", "reset"]
+            req = r
+        } else {
+            Self.log.error("Voice: speech recognition unavailable (authorized=\(speech)); sending the clip only")
+        }
+        request = req
+
         let clip = clip
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self, weak req] buffer, _ in
@@ -101,15 +143,19 @@ final class VoiceEdit {
         engine.prepare()
         try engine.start()
         isListening = true
+        Self.log.notice("Voice start: \(Int(format.sampleRate)) Hz \(format.channelCount) ch, input \(session.currentRoute.inputs.first?.portType.rawValue ?? "none", privacy: .public), on-device=\(req?.requiresOnDeviceRecognition ?? false)")
 
+        guard let req, let recognizer else { return }
         let s = serial
         task = recognizer.recognitionTask(with: req) { [weak self] result, error in
             let text = result?.bestTranscription.formattedString
             let final = result?.isFinal ?? false
+            let message = error?.localizedDescription
             Task { @MainActor in
                 guard let self, self.serial == s else { return }
                 if let text { self.latest = text }
-                if final || (error != nil && !self.isListening) { self.deliver() }
+                if let message { Self.log.notice("Voice recognizer: \(message, privacy: .public)") }
+                if final || (message != nil && !self.isListening) { self.deliver() }
             }
         }
     }
@@ -118,13 +164,17 @@ final class VoiceEdit {
         guard !delivered else { return }
         delivered = true
         let text = latest.trimmingCharacters(in: .whitespacesAndNewlines)
+        Self.log.notice("Voice transcript: \"\(text, privacy: .public)\"")
         teardown()
         onText?(text)
     }
 
     private func stopAudio() {
-        if engine.isRunning { engine.stop() }
-        engine.inputNode.removeTap(onBus: 0)
+        if let engine {
+            if engine.isRunning { engine.stop() }
+            engine.inputNode.removeTap(onBus: 0)
+        }
+        engine = nil
         isListening = false
         level = 0
     }
@@ -137,12 +187,31 @@ final class VoiceEdit {
         serial += 1
     }
 
-    private static func authorize() async -> Bool {
-        let speech: Bool = await withCheckedContinuation { c in
-            SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0 == .authorized) }
+    struct Access: Sendable {
+        let speech: Bool
+        let mic: Bool
+    }
+
+    /// Speech and mic permission, asking only when not yet decided. The clip alone still works
+    /// (Gemini Decision hears it) when speech recognition is refused.
+    private static func authorize() async -> Access {
+        let status = SFSpeechRecognizer.authorizationStatus()
+        let speech: Bool
+        if status == .notDetermined {
+            speech = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
+                SFSpeechRecognizer.requestAuthorization { c.resume(returning: $0 == .authorized) }
+            }
+        } else {
+            speech = status == .authorized
         }
-        guard speech else { return false }
-        return await AVAudioApplication.requestRecordPermission()
+        let mic: Bool
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted: mic = true
+        case .denied: mic = false
+        default: mic = await AVAudioApplication.requestRecordPermission()
+        }
+        log.notice("Voice permission: speech=\(speech) mic=\(mic)")
+        return Access(speech: speech, mic: mic)
     }
 
     nonisolated private static func rms(_ buffer: AVAudioPCMBuffer) -> Double {
@@ -155,8 +224,8 @@ final class VoiceEdit {
     }
 
     enum VoiceError: LocalizedError {
-        case unavailable
-        var errorDescription: String? { "Speech recognition isn't available right now." }
+        case noInput
+        var errorDescription: String? { "The microphone has no input format (another engine may hold it)." }
     }
 }
 
@@ -167,13 +236,27 @@ final class ClipBuffer: @unchecked Sendable {
     private let seconds: Double
     private var rate: Double = 48_000
     private var samples: [Float] = []
+    private var total = 0
 
     init(seconds: Double) { self.seconds = seconds }
+
+    /// Frames received since the last reset (all of them, not just the kept tail).
+    var frames: Int {
+        lock.lock(); defer { lock.unlock() }
+        return total
+    }
+
+    /// Seconds of audio kept.
+    var duration: Double {
+        lock.lock(); defer { lock.unlock() }
+        return Double(samples.count) / rate
+    }
 
     func reset(sampleRate: Double) {
         lock.lock(); defer { lock.unlock() }
         rate = sampleRate > 0 ? sampleRate : 48_000
         samples.removeAll(keepingCapacity: true)
+        total = 0
     }
 
     func append(_ buffer: AVAudioPCMBuffer) {
@@ -181,6 +264,7 @@ final class ClipBuffer: @unchecked Sendable {
         let n = Int(buffer.frameLength)
         lock.lock(); defer { lock.unlock() }
         samples.append(contentsOf: UnsafeBufferPointer(start: ch, count: n))
+        total += n
         let cap = Int(rate * seconds)
         if samples.count > cap { samples.removeFirst(samples.count - cap) }
     }
@@ -189,13 +273,20 @@ final class ClipBuffer: @unchecked Sendable {
         lock.lock()
         let src = samples, r = rate
         lock.unlock()
-        let out = 16_000.0
+        return Self.wav(samples: src, rate: r)
+    }
+
+    /// Float samples at `rate` → a 16 kHz mono 16-bit PCM WAV (box-filter resample). Nil under 0.1 s.
+    static func wav(samples src: [Float], rate r: Double, outRate: Int = 16_000) -> Data? {
+        guard r > 0 else { return nil }
+        let out = Double(outRate)
         let step = r / out
         let count = Int(Double(src.count) / step)
-        guard count > 1_600 else { return nil }   // under 0.1 s: nothing said
+        guard count > outRate / 10 else { return nil }   // under 0.1 s: nothing said
         var pcm = Data(capacity: count * 2)
         for i in 0..<count {
-            let a = Int(Double(i) * step), b = min(src.count, max(a + 1, Int(Double(i + 1) * step)))
+            let a = min(src.count - 1, Int(Double(i) * step))
+            let b = min(src.count, max(a + 1, Int(Double(i + 1) * step)))
             var sum: Float = 0
             for j in a..<b { sum += src[j] }
             let v = max(-1, min(1, sum / Float(b - a)))
@@ -205,7 +296,8 @@ final class ClipBuffer: @unchecked Sendable {
         func u32(_ x: UInt32) { withUnsafeBytes(of: x.littleEndian) { h.append(contentsOf: $0) } }
         func u16(_ x: UInt16) { withUnsafeBytes(of: x.littleEndian) { h.append(contentsOf: $0) } }
         h.append(contentsOf: Array("RIFF".utf8)); u32(UInt32(36 + pcm.count)); h.append(contentsOf: Array("WAVE".utf8))
-        h.append(contentsOf: Array("fmt ".utf8)); u32(16); u16(1); u16(1); u32(16_000); u32(32_000); u16(2); u16(16)
+        h.append(contentsOf: Array("fmt ".utf8)); u32(16); u16(1); u16(1)
+        u32(UInt32(outRate)); u32(UInt32(outRate * 2)); u16(2); u16(16)
         h.append(contentsOf: Array("data".utf8)); u32(UInt32(pcm.count))
         return h + pcm
     }

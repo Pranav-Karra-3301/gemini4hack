@@ -39,6 +39,34 @@ final class CoachSession {
     private(set) var phase: Phase = .off
     /// Always nil: the coach is heard, never read (kept for the UI's existing hooks).
     private(set) var caption: String?
+    /// One-line on-screen hint (≤ 40 chars): written by Gemini 4 in `guide`, gaps filled from Decision moves.
+    private(set) var hint: String?
+    private(set) var hintSerial = 0
+    @ObservationIgnored private var modelHintAt = Date.distantPast
+
+    static let maxHint = 40
+    static let moveHints: [GuideDirection: String] = [
+        .left: "A little to the left", .right: "A little to the right",
+        .up: "Tilt up a little", .down: "Tilt down a little",
+        .closer: "Step a little closer", .back: "Step back a little",
+        .rotateLeft: "Level it, rotate left", .rotateRight: "Level it, rotate right",
+        .hold: "Hold it there",
+    ]
+
+    /// Model hints win; Decision hints only fill in when the model hasn't spoken for 4 s.
+    func setHint(_ text: String, fromModel: Bool) {
+        if !fromModel, Date().timeIntervalSince(modelHintAt) < 4 { return }
+        var t = text.trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: "\"'.")))
+        guard !t.isEmpty else { return }
+        if t.count > Self.maxHint {
+            t = String(t.prefix(Self.maxHint))
+            if let sp = t.lastIndex(of: " ") { t = String(t[..<sp]) }
+        }
+        if fromModel { modelHintAt = Date() }
+        guard t != hint else { return }
+        hint = t
+        hintSerial += 1
+    }
     /// Always nil (no on-screen transcript).
     private(set) var heard: String?
     /// The user's last utterance (kept; goes into the instant review's context).
@@ -111,7 +139,7 @@ final class CoachSession {
     static let readyP = 0.7
     /// Minimum gap between cycles, and the re-check while nothing moves (not ready yet).
     static let minGap: TimeInterval = 0.8
-    static let stillRecheck: TimeInterval = 10
+    static let stillRecheck: TimeInterval = 4
     /// After a mode, lens or zoom change the picture jumps; drift ignores it this long.
     static let opticsSettle: TimeInterval = 2
 
@@ -282,6 +310,7 @@ final class CoachSession {
             var responses: [JSONValue] = []
             for c in reply.calls {
                 calls.append(c.name)
+                if let h = c.args["hint"]?.stringValue { setHint(h, fromModel: true) }
                 let result = await runTool(FunctionCall(id: c.id, name: c.name, args: c.args))
                 responses.append(GeminiDirect.functionResponse(name: c.name, id: c.id, response: Self.json(result)))
             }
@@ -350,6 +379,7 @@ final class CoachSession {
             readySetAt = Date()
             drift.anchorReady(drift.isSettling ? nil : frames.latest?.thumb)
             showGuide(.hold, .small)
+            setHint("That's it, take it", fromModel: true)
             if readyHapticArmed {
                 readyHapticArmed = false
                 readyHaptic.fire()
@@ -366,6 +396,7 @@ final class CoachSession {
         guard let move, move.p >= Self.moveP else { lastMove = nil; return }
         if move.option == lastMove, let dir = GuideDirection(rawValue: move.option) {
             showGuide(dir, move.p >= 0.8 ? .large : .medium)
+            if let h = Self.moveHints[dir] { setHint(h, fromModel: false) }
         }
         lastMove = move.option
     }

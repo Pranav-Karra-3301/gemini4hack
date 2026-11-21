@@ -24,6 +24,8 @@ final class Listener {
         didSet { feed.request = request }
     }
     @ObservationIgnored private var generation = 0
+    /// Bumps on every stop, so a start still waiting on permission never opens the mic after it.
+    @ObservationIgnored private var stops = 0
     @ObservationIgnored private var task: SFSpeechRecognitionTask?
     @ObservationIgnored private var partial = ""
     @ObservationIgnored private var silence: Task<Void, Never>?
@@ -41,12 +43,17 @@ final class Listener {
 
     func start() async {
         guard !isRunning else { return }
+        let stopsAtStart = stops
         guard await Self.requestAccess() else {
             log.error("speech or microphone permission denied; the mic key can't listen")
             return
         }
         guard let recognizer, recognizer.isAvailable else {
             log.error("speech recognizer unavailable for en-US")
+            return
+        }
+        guard stops == stopsAtStart, !isRunning else {
+            log.notice("stopped while asking for permission; not opening the mic")
             return
         }
         do {
@@ -75,6 +82,7 @@ final class Listener {
     }
 
     func stop() {
+        stops += 1
         silence?.cancel(); silence = nil
         task?.cancel(); task = nil
         request?.endAudio(); request = nil
