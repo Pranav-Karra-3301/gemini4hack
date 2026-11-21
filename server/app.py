@@ -163,10 +163,18 @@ def _is_loopback(host: str | None) -> bool:
     return ip.is_loopback
 
 
-def _proxied(headers) -> bool:
+def _proxied(headers, client_host: str | None = None) -> bool:
     """Came through a proxy (the Cloudflare tunnel, or anything that forwards for someone else):
-    the TCP peer being loopback says nothing about the real client then."""
-    return bool(headers.get("cf-connecting-ip") or headers.get("x-forwarded-for") or headers.get("forwarded"))
+    the TCP peer being loopback says nothing about the real client then. The one exception is the
+    local Vite proxy (xfwd) forwarding for this Mac: a loopback peer whose X-Forwarded-For hops are
+    all loopback. X-Forwarded-For from any other peer is never trusted."""
+    if headers.get("cf-connecting-ip") or headers.get("forwarded"):
+        return True
+    xff = headers.get("x-forwarded-for")
+    if not xff:
+        return False
+    hops = [h.strip() for h in xff.split(",")]
+    return not (_is_loopback(client_host) and all(_is_loopback(h) for h in hops))
 
 
 def _same(a: str, b: str) -> bool:
@@ -178,7 +186,7 @@ def token_ok(headers, cookies, client_host: str | None = None) -> bool:
     non-loopback peer) need the coach token as `Authorization: Bearer <token>` or cookie
     `coach_k`. `client_host` None means the caller didn't say; then only the proxy rule applies
     (the ASGI gate below always passes the peer)."""
-    if not _proxied(headers) and (client_host is None or _is_loopback(client_host)):
+    if not _proxied(headers, client_host) and (client_host is None or _is_loopback(client_host)):
         return True
     token = coach_token()
     if not token:
@@ -190,7 +198,7 @@ def token_ok(headers, cookies, client_host: str | None = None) -> bool:
 
 def is_local(headers, client_host: str | None) -> bool:
     """A direct loopback request (the Mac itself), not a tunnel or LAN client."""
-    return _is_loopback(client_host) and not _proxied(headers)
+    return _is_loopback(client_host) and not _proxied(headers, client_host)
 
 
 class TokenGate:

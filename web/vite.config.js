@@ -3,7 +3,8 @@ import { defineConfig } from 'vite';
 
 // Pages: / (lighting coach), /cam.html (live coach camera), /3d.html (3D coach, SHARP splats).
 // COACH_HOST=0.0.0.0 exposes the dev server on the LAN (phone testing); API_PORT points the
-// proxy at another API instance (agents test on their own port).
+// proxy at another API instance (agents test on their own port). xfwd passes the real client
+// address to Core, so LAN requests through this proxy still need the coach token.
 const API = `http://127.0.0.1:${process.env.API_PORT || 8787}`;
 
 export default defineConfig({
@@ -13,7 +14,7 @@ export default defineConfig({
     host: process.env.COACH_HOST || 'localhost',
     allowedHosts: true,
     proxy: {
-      '/api': { target: API, changeOrigin: true, ws: true },
+      '/api': { target: API, changeOrigin: true, ws: true, xfwd: true },
     },
   },
   preview: { port: 5321 },

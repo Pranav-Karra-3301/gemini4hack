@@ -210,11 +210,14 @@ needs ≥ 4,096).
   for, once, and resume that session until it expires. Browsers use the `WS /api/live` proxy,
   where the key stays on Core.
 - **Core's gate** (`TokenGate`, pure ASGI, every HTTP and WebSocket path):
-  - Direct loopback requests (the Mac itself) pass.
+  - Direct loopback requests (the Mac itself) pass, and so do requests the local Vite proxy
+    forwards for the Mac (a loopback peer whose `x-forwarded-for` hops are all loopback; Vite
+    sets it with `xfwd: true`).
   - Everything else needs the coach token, as `Authorization: Bearer <token>` or cookie
-    `coach_k`, compared in constant time. That covers LAN peers and any request carrying proxy
-    headers (`cf-connecting-ip`, `x-forwarded-for`, `forwarded`), even from loopback, so the
-    Cloudflare tunnel can't ride the loopback exemption.
+    `coach_k`, compared in constant time. That covers LAN peers (direct or through the Vite
+    proxy) and any request carrying `cf-connecting-ip` or `forwarded`, even from loopback, so the
+    Cloudflare tunnel can't ride the loopback exemption. `x-forwarded-for` is only trusted from a
+    loopback peer.
   - Failures get 401 JSON, or WebSocket close 1008.
 - **The coach token** is `server/.coach_token` (32 hex chars, chmod 600, gitignored), created on the
   first LAN start, or env `COACH_TOKEN`. It is read on every request, so replacing the file rotates
@@ -310,8 +313,6 @@ Main env knobs: `COACH_PORT`, `COACH_LAN`, `COACH_TOKEN`, `COACH_LAN_HOST`, `COA
 **Operations.**
 - Only one Core process can own a library. A second one serves it read-only (`hello.processing:
   false`) and never processes shots.
-- If Vite is ever bound to the LAN (`COACH_HOST=0.0.0.0`), its proxy hides the client's address
-  and LAN requests would skip the token. Fix: `xfwd: true` in `web/vite.config.js`.
 - The web client still uses the old `exposure`/`warmth` camera fields; the proxy maps them.
 - `WS /api/live` (web proxy) rotates the upstream at once on `goAway` and can cut a sentence short.
 
