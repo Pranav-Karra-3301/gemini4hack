@@ -64,6 +64,9 @@ angle anything, to use a flash or reflector, to wait, or to reshoot.
 The 3 regions must be different things and should not overlap much. Avoid boxes that cover \
 most of the frame."""
 
+# How long callers wait for this image's depth before asking without it (env REGIONS_DEPTH_WAIT_S):
+# warm Depth Pro takes 0.3-0.6 s, a new image shape up to ~4 s.
+DEPTH_WAIT_S = float(os.environ.get("REGIONS_DEPTH_WAIT_S", "4"))
 # depth.png stores millimetres in uint16, so everything past ~65 m reads as "far".
 FAR_M = 65.0
 DEPTH_HINT = ("Use the depth when it helps: blur by depth what sits well behind the subject, or \
@@ -111,7 +114,7 @@ def _prepare(image_bytes: bytes, mime: str) -> tuple[str, str]:
 
 
 def _dist(m: float) -> str:
-    return "far" if m >= FAR_M else f"{m:.1f} m" if m < 10 else f"{m:.0f} m"
+    return "far" if m >= FAR_M else f"{m:.1f} m" if m < 9.95 else f"{m:.0f} m"
 
 
 def depth_notes(depth_m) -> str | None:
@@ -140,7 +143,7 @@ def depth_notes(depth_m) -> str | None:
         rows.append(f"{name}: " + " | ".join(cells))
     share = float(far.sum()) / float(known.sum())
     return (f"Depth from the camera (measured, metres): nearest {_dist(float(p02))}, farthest "
-            f"{_dist(float(p98))}; {share:.0%} of the frame is sky or beyond {FAR_M:.0f} m. "
+            f"{_dist(float(p98))}; about {share:.0%} of the frame is sky or beyond {FAR_M:.0f} m. "
             "Median distance in each ninth of the frame (rows top to bottom, columns left to right):\n"
             + "\n".join(rows) + "\n" + DEPTH_HINT)
 

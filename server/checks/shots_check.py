@@ -60,7 +60,7 @@ def serve(port: int, fake: bool) -> None:
             return {"provider": "fake", "scores": {"lighting": mk(3.1, "flat midday light"),
                                                    "composition": mk(3.8, "subject centered")}, "ms": 400}
 
-        async def fake_regions(data, mime):
+        async def fake_regions(data, mime, depth_m=None):
             await asyncio.sleep(0.6)
             return {"regions": [
                 {"id": "r1", "box": {"x": 0.3, "y": 0.25, "w": 0.4, "h": 0.6}, "tag": "focus", "note": "Subject"},

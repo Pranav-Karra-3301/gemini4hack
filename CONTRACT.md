@@ -48,8 +48,8 @@ Exactly 3 regions. `box` is normalized 0..1 of the image, origin top-left. `tag`
 (distracting, crop or clean it) or `"focus"` (the subject or light worth building around).
 The photo is treated as already taken: every `note` is an edit (crop, tone, color, subject or
 background light, depth blur, vignette), never "move", "wait" or "reshoot". Core runs Depth Pro on
-the same bytes first (cached, so a parallel `/api/depth` call shares it) and puts a short depth
-summary in the prompt; if depth fails, regions still answer without it.
+the same bytes first (up to `REGIONS_DEPTH_WAIT_S`, 4 s) and puts a short depth summary in the
+prompt; if depth fails or is late, regions still answer without it.
 
 ### `/api/score`
 ```json

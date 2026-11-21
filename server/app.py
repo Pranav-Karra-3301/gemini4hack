@@ -324,8 +324,14 @@ async def api_depth(image: UploadFile = File(...)):
 @app.post("/api/regions")
 async def api_regions(image: UploadFile = File(...)):
     data = await image.read()
-    try:  # the prompt gets a depth summary; depth.py caches by image bytes, so /api/depth reuses it
-        depth_m, _ = await run_in_threadpool(depth.infer_depth, data)
+    # The prompt gets a depth summary, bounded like the pipeline's wait. On a timeout the depth
+    # thread finishes on its own and fills depth.py's cache.
+    try:
+        depth_m, _ = await asyncio.wait_for(run_in_threadpool(depth.infer_depth, data),
+                                            regions.DEPTH_WAIT_S)
+    except asyncio.TimeoutError:
+        log.warning("regions: depth not ready after %.1f s, asking without it", regions.DEPTH_WAIT_S)
+        depth_m = None
     except Exception:
         log.warning("regions: depth failed, asking without it", exc_info=True)
         depth_m = None

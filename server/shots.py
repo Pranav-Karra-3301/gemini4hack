@@ -66,8 +66,6 @@ PING_S = 15.0
 SUB_QUEUE = 512
 STAGES = ("depth", "score", "regions", "masks", "suggest")
 PHASES = (("depth", "score", "regions"), ("masks", "suggest"))
-# How long regions wait for the depth running beside them (their prompt gets a depth summary).
-REGIONS_DEPTH_WAIT_S = float(os.environ.get("REGIONS_DEPTH_WAIT_S", "2"))
 FILES = {  # servable asset files -> media type
     "image.jpg": "image/jpeg", "original.jpg": "image/jpeg", "thumb.jpg": "image/jpeg",
     "depth.png": "image/png", "regions.json": "application/json", "score.json": "application/json",
@@ -327,9 +325,9 @@ def _read_depth_m(sid: str) -> np.ndarray:
 
 async def _depth_for_regions(sid: str) -> np.ndarray | None:
     """This shot's depth for the regions prompt. Depth runs beside regions and is usually done
-    in 0.3-0.6 s, so wait up to REGIONS_DEPTH_WAIT_S for it; None (regions go without) if it
-    fails or is late, e.g. while SAM or SHARP holds the GPU."""
-    deadline = time.monotonic() + REGIONS_DEPTH_WAIT_S
+    in 0.3-0.6 s (up to ~4 s on a new image shape), so wait up to REGIONS_DEPTH_WAIT_S for it;
+    None (regions go without) if it fails or is late, e.g. while SAM or SHARP holds the GPU."""
+    deadline = time.monotonic() + regions.DEPTH_WAIT_S
     while True:
         rec = _records.get(sid)
         status = _status(rec, "depth") if rec else "none"
@@ -338,7 +336,7 @@ async def _depth_for_regions(sid: str) -> np.ndarray | None:
         if status not in ("pending", "running"):
             return None
         if time.monotonic() >= deadline:
-            log.info("shot %s regions: depth not ready after %.1f s, going without", sid, REGIONS_DEPTH_WAIT_S)
+            log.info("shot %s regions: depth not ready after %.1f s, going without", sid, regions.DEPTH_WAIT_S)
             return None
         await asyncio.sleep(0.05)
     try:

@@ -4,8 +4,8 @@ Usage: cd server && uv run --no-sync python checks/regions_check.py [--effort lo
        [--no-depth] IMG...
 Writes ../out/regions_<stem>.jpg (boxes + tags, notes in a footer, ~768 px long side).
 Depth Pro runs first and its summary goes into the prompt, as in the pipeline (--no-depth skips it).
-The photo is already taken, so a note that asks for a reshoot (move the camera, wait, retake…)
-fails the check: exit 1.
+The photo is already taken, so a note the editor can't act on (move the camera, wait, retake,
+erase an object…) fails the check: exit 1.
 """
 
 import argparse
@@ -27,14 +27,35 @@ import regions  # noqa: E402
 
 OUT = ROOT / "out"
 COLORS = {"focus": (40, 220, 120), "remove": (255, 70, 70)}
-# Advice only a photographer at the scene can follow; none of it is possible in the editor.
+# Notes the editor can't act on: advice for the photographer at the scene, or erasing objects.
+# Verbs count only where an instruction starts ("Crop or step left" fails, "Straighten the tilt
+# to the left" passes).
+_START = r"(?:^|[;:.!?]\s+|,\s+|\b(?:or|and|then)\s+)"
 CAPTURE = re.compile(
-    r"\b(pan|tilt|angle|step|move|walk|lean|reposition)\b(\s+\w+){0,3}?\s+"
-    r"(left|right|up|down|closer|back|forward|toward|towards|away|aside|in)\b"
-    r"|\bturn (the |your )?(group|subject|camera|him|her|them|toward|towards|away|around|into)\b"
-    r"|\b(re-?shoot|re-?take|wait (for|until|till)|next time|come back|shoot (from|again|at|wider|tighter)|"
-    r"(fill[- ])?flash|reflector|position the|ask (him|her|them|the)|change (the |your )?(angle|position|viewpoint)|"
-    r"get (closer|lower|higher)|(lower|raise) the (camera|lens|phone))\b", re.I)
+    _START + r"(pan|tilt|angle|step|move|walk|lean|position|reposition|re-?shoot|re-?take|wait|ask|"
+    r"remove|erase|clone|delete|heal|retouch)\b"
+    r"|" + _START + r"turn\b(?!\s+(down|up)\b)"
+    r"|" + _START + r"(shoot|get)\s+(\w+\s+)?(again|later|from|closer|lower|higher|wider|tighter)\b"
+    r"|\b(use|add|with|try)\s+(a\s+|the\s+|some\s+)?(fill[- ])?(flash|reflector)\b"
+    r"|\b(wait (for|until|till)|next time|come back|switch off|shutter speed|aperture)\b", re.I)
+# Regression cases for CAPTURE itself, checked before any API call.
+CAPTURE_CASES = {
+    True: ["Wait for the walker and dog to clear the tree tunnel.", "Step much closer; the subjects are tiny.",
+           "Crop or step left to exclude the messy dry brush.", "Turn toward the sun or add fill flash.",
+           "Angle the group slightly left to catch side-light.", "Pan right or lower highlights on the sun.",
+           "Clone out or crop the bright orange date stamp.", "Remove the trash can at left.",
+           "Turn off the lamp.", "Use a faster shutter speed.", "Shoot this again later.",
+           "Position the receding cliffs to lead the eye.",
+           "Use fill flash or a reflector to lift the shadows."],
+    False: ["Straighten the tilt to the left horizon.", "Crop the tilted angle at left.",
+            "Crop the angle in tighter.", "Tone down the flash glare on her forehead.",
+            "Crop to reposition her left of center.", "Crop tighter to get closer to her face.",
+            "Crop up from the bottom to remove the bare dirt foreground.",
+            "Turn down the saturation of the orange sign.", "Lower highlights on the blown-out sun corner.",
+            "Add lens blur beyond 5 m to soften the distant walker and dog.",
+            "Crop up through the near pavement; it removes the painted line too.",
+            "Lift shadows and warm the foreground subjects under 2 m."],
+}
 VIEW = 768
 
 
@@ -80,6 +101,10 @@ async def main() -> None:
     args = ap.parse_args()
     if args.effort:
         regions.EFFORT = "" if args.effort == "default" else args.effort
+    wrong = [n for want, notes in CAPTURE_CASES.items() for n in notes if bool(CAPTURE.search(n)) != want]
+    if wrong:
+        print("CAPTURE regex misclassifies:", *wrong, sep="\n   ")
+        sys.exit(2)
     capture = []
     for path in args.images:
         data = path.read_bytes()
@@ -104,10 +129,10 @@ async def main() -> None:
         print(f"   wrote {draw(path, result, dbg['labels'])}")
         capture += [f"{path.name} {r['id']}: {r['note']}" for r in result["regions"] if CAPTURE.search(r["note"])]
     if capture:
-        print(f"FAIL: {len(capture)} note(s) ask for a reshoot, but the photo is already taken:")
+        print(f"FAIL: {len(capture)} note(s) ask for something the editor can't do (the photo is taken):")
         print("\n".join(f"   {c}" for c in capture))
         sys.exit(1)
-    print(f"OK: {len(args.images)} image(s), no reshoot advice")
+    print(f"OK: {len(args.images)} image(s), every note is an edit")
 
 
 if __name__ == "__main__":
