@@ -9,6 +9,7 @@ const MODULES = {
   lidar: import.meta.glob('./lidar/*.js'),
   story: import.meta.glob('./story/*.js'),
   showcase: import.meta.glob('./showcase/*.js'),
+  looks: import.meta.glob('./looks/*.js'),
   footer: import.meta.glob('./footer/*.js'),
 };
 
@@ -93,6 +94,8 @@ function sectionMarkup(ch) {
     case 'showcase':
       // The module owns this section's layout once mounted.
       return `<section class="showcase-host" id="${ch.id}" aria-label="${ch.fallback.title}"></section>`;
+    case 'looks':
+      return `<section class="looks-host" id="${ch.id}" aria-label="${ch.title}"></section>`;
     case 'voice':
       return `
       <section class="section section--voice ${side}" id="${ch.id}">
@@ -213,6 +216,11 @@ whenNear(byId('lidar'), () => {
 whenNear(byId('after'), () => {
   const ch = chapter('showcase');
   mountModule(byId('after'), 'showcase', 'mountShowcase', [{ chapters: [`${pad(ch.n)} · ${ch.fallback.label}`] }], plainSection(headMarkup({ n: ch.n, ...ch.fallback })));
+});
+
+whenNear(byId('looks'), () => {
+  const ch = chapter('looks');
+  mountModule(byId('looks'), 'looks', 'mountLooks', [ch], plainSection(headMarkup(ch)));
 });
 
 whenNear(byId('hood'), () => {

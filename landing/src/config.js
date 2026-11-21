@@ -48,11 +48,11 @@ export const CHAPTERS = [
     copy: {
       label: '01 · Sees in 3D',
       title: 'Every shot, measured in 3D.',
-      lede: 'The LiDAR scanner records metric depth with every photo, on the phone.',
+      lede: 'The LiDAR scanner measures the scene in metres on the phone, and Gemini gets the distance to your subject in every turn.',
       steps: [
         { title: 'LiDAR', text: 'A grid of infrared dots lands on every surface.' },
-        { title: 'Distance', text: 'Each point gets a distance in metres. A live depth tile shows it in the viewfinder.' },
-        { title: 'Depth Pro 2', text: 'After the shot, Apple’s Depth Pro 2 sharpens the depth on the Neural Engine.' },
+        { title: 'Distance, live', text: 'The depth stream runs about 15 times a second. The distance at your subject goes to Gemini as subject_m.' },
+        { title: 'Depth Pro 2', text: 'After the shot, Apple’s Depth Pro 2 S gives every pixel a metric depth on the Neural Engine.' },
       ],
       caption: 'Sample scene: IMG_1491 · depth shown as points',
     },
@@ -70,7 +70,7 @@ export const CHAPTERS = [
     loop: 6.2,
     // Synced to the viewfinder scene: ISO rolls 800 → 200 at 0.9 s, the left edge glows at 1.9 s.
     trace: [
-      { t: 0.0, dir: 'in', text: 'frame · 512 px', meta: 'ISO 800 · 1/125 · EV −0.3 · group of four, backlit' },
+      { t: 0.0, dir: 'in', text: 'frame · 512 px + state', meta: 'ISO 800 · 1/125 · EV −0.3 · subject_m 1.2 (LiDAR)' },
       { t: 0.35, dir: 'think', text: 'gemini-4-hydrogen', meta: 'agent loop · thinking low' },
       { t: 0.9, dir: 'call', text: 'set_camera({ iso: 200, why: "faces are already bright" })' },
       { t: 1.35, dir: 'in', text: 'functionResponse', meta: '{ iso: 200 } · clamped to what this iPhone supports' },
@@ -78,7 +78,7 @@ export const CHAPTERS = [
       { t: 3.6, dir: 'call', text: 'decide({ ready: "yes", p: 0.91 })', meta: 'gemini-decision-1 · “That’s it.”' },
     ],
     traceLabel: 'Agent trace · live',
-    traceNote: 'Replayed faster than real time. A Gemini 4 call takes about 3.7 s; a Decision call about 0.8 s.',
+    traceNote: 'Replayed faster than real time. A Gemini 4 turn takes 1.6–5 s; a Decision call 0.4–1 s.',
   },
   {
     // src/showcase/ mountShowcase(el, opts): the same shot from 01, after the shutter.
@@ -92,13 +92,30 @@ export const CHAPTERS = [
     },
   },
   {
+    // src/looks/ mountLooks(el, chapter): Neon writes a Metal shader live; real preset code.
+    id: 'looks',
+    kind: 'looks',
+    n: 4,
+    label: 'Looks',
+    title: 'Gemini writes the shader.',
+    lede: 'Say a look. Gemini 4 Neon writes a Metal shader for it, the phone compiles it on the GPU, and the photo changes live.',
+    steps: [
+      { title: 'Say it', text: '“Kodachrome 400 slide film”' },
+      { title: 'Neon writes Metal', text: 'The code streams onto the photo as it’s written.' },
+      { title: 'Compiled on the phone', text: 'If it doesn’t compile, the error goes back to Neon to fix.' },
+      { title: 'Live', text: 'The new look fades in over 0.7 s.' },
+    ],
+    tech: 'gemini-4-neon · streamGenerateContent · thinkingLevel low · MTLDevice.makeLibrary(source:)',
+    note: 'Replayed faster than real time. Writing a look takes about 18 s.',
+  },
+  {
     id: 'voice',
     kind: 'voice',
-    n: 4,
+    n: 5,
     media: 'left',
     label: 'Just talk to it',
     title: 'Say what you want.',
-    lede: 'Your words are transcribed on the phone, and a clip of your voice goes to Gemini too. It answers in its own voice.',
+    lede: 'Your words are transcribed on the phone, and a clip of your voice goes to Gemini too. It answers in a calm voice.',
     loop: 7.5,
     listen: [0.3, 2.3],
     steps: [
