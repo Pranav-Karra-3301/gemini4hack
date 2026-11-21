@@ -26,8 +26,9 @@ Errors: non-2xx with JSON `{"error": "..."}`. Times are ISO 8601 UTC. All JSON i
   `COACH_TOKEN`; it is re-read per request, so replacing the file rotates it without a restart.
   Every request (any path, HTTP and WebSocket) needs it unless it comes from the Mac itself:
   straight from loopback, or through the local Vite proxy (loopback peer, every
-  `x-forwarded-for` hop loopback). A non-loopback peer, a LAN client through the Vite proxy, or
-  any request carrying `cf-connecting-ip` or `forwarded` (the tunnel) must send it. Missing or wrong → 401 `{"error": ...}`, or WebSocket
+  `x-forwarded-for` hop loopback). A non-loopback peer, a LAN client through the Vite proxy
+  (including the Mac's own browser on Vite's LAN address), or any request carrying
+  `cf-connecting-ip` or `forwarded` (the tunnel) must send it. Missing or wrong → 401 `{"error": ...}`, or WebSocket
   close 1008.
 - `GET /api/pair` (loopback only; 403 otherwise, 409 if LAN mode is off, 503 if no token or LAN
   address yet): `{"host": "192.168.1.20", "port": 8787, "token": "...", "name": "Coach Core (<hostname>)",

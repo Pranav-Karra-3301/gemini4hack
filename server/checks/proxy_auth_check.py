@@ -28,6 +28,8 @@ CASES = [
     ("localhost via vite (xfwd)", {"x-forwarded-for": "127.0.0.1"}, {}, "127.0.0.1", True, True),
     ("::1 via vite (xfwd)", {"x-forwarded-for": "::1"}, {}, "127.0.0.1", True, True),
     ("LAN via vite, no token", {"x-forwarded-for": LAN}, {}, "127.0.0.1", False, False),
+    # uvicorn's proxy headers rewrite the peer to the last untrusted hop, so Core really sees this:
+    ("LAN via vite, peer rewritten by uvicorn", {"x-forwarded-for": LAN}, {}, LAN, False, False),
     ("LAN via vite, bearer", {"x-forwarded-for": LAN, **BEARER}, {}, "127.0.0.1", True, False),
     ("LAN via vite, cookie", {"x-forwarded-for": LAN}, {"coach_k": TOKEN}, "127.0.0.1", True, False),
     ("LAN via vite, spoofed 127.0.0.1 first", {"x-forwarded-for": f"127.0.0.1, {LAN}"}, {}, "127.0.0.1",
