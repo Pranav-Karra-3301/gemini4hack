@@ -54,6 +54,17 @@ struct ShotReveal: View {
                     }
                     .transition(.opacity)
                     .id(mode)
+                    .overlay {
+                        // Dictation: the live words over the bottom of the photo, kept ~1 s after sending.
+                        if mode == .photo {
+                            DictationBar(isListening: voice.active || voice.sent,
+                                         transcript: voice.transcript, level: Float(voice.level))
+                                .frame(width: rect.width, height: rect.height)
+                                .offset(x: rect.minX, y: rect.minY)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                .allowsHitTesting(false)
+                        }
+                    }
                 }
                 .padding(.top, top + 52)
                 .padding(.horizontal, mode.is3D ? 0 : 12)
@@ -115,7 +126,7 @@ struct ShotReveal: View {
         }
         .onChange(of: model.photo) { _, _ in mode = .photo }
         .onChange(of: mode) { _, m in
-            if m != .photo, voice.isListening { voice.cancel() }
+            if m != .photo, voice.active || voice.isListening { voice.cancel() }
         }
         .onDisappear { voice.cancel() }
         .onAppear { voice.prepare() }
@@ -374,22 +385,32 @@ private struct ViewerBar: View {
     let model: RevealModel
     let voice: VoiceEdit
     @State private var pressed = false
+    @State private var pressedAt = Date.distantPast
+    @State private var tapped = false
+
+    private func stop() {
+        guard voice.active else { return }
+        UIImpactFeedbackGenerator(style: .rigid).impactOccurred(intensity: 0.7)
+        voice.end()
+    }
 
     var body: some View {
         HStack(spacing: 12) {
             Capsule(style: .circular)
-                .fill(Color(red: 0.64, green: 0.09, blue: 0.11))
+                .fill(voice.active ? Color(red: 0.93, green: 0.15, blue: 0.15) : Color(red: 0.64, green: 0.09, blue: 0.11))
+                .animation(.easeOut(duration: 0.1), value: voice.active)
                 .overlay {
                     Capsule(style: .circular)
                         .fill(RadialGradient(colors: [Color(red: 1, green: 0.38, blue: 0.34).opacity(0.85), .clear],
                                              center: .center, startRadius: 0, endRadius: 70))
-                        .opacity(voice.isListening ? 0.35 + 0.65 * voice.level : 0)
+                        .opacity(voice.active ? 0.35 + 0.65 * voice.level : 0)
                         .animation(.easeOut(duration: 0.12), value: voice.level)
                 }
                 .overlay(Image(systemName: "mic.fill").font(.system(size: 22, weight: .regular))
                     .foregroundStyle(Color.white.opacity(0.92)))
-                .scaleEffect(pressed ? 0.96 : 1)
+                .scaleEffect(pressed ? 0.96 : (voice.active ? 1 + 0.08 * voice.level : 1))
                 .animation(.spring(response: 0.22, dampingFraction: 0.7), value: pressed)
+                .animation(.easeOut(duration: 0.12), value: voice.level)
                 .frame(width: 120)
                 .contentShape(Capsule())
                 .gesture(
@@ -397,15 +418,26 @@ private struct ViewerBar: View {
                         .onChanged { _ in
                             guard !pressed else { return }
                             pressed = true
-                            UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.8)
-                            voice.begin()
+                            if voice.active {
+                                // Second tap: stop and send.
+                                tapped = false
+                                stop()
+                            } else {
+                                pressedAt = .now
+                                tapped = false
+                                UIImpactFeedbackGenerator(style: .medium).impactOccurred(intensity: 0.9)
+                                voice.begin()
+                            }
                         }
                         .onEnded { _ in
                             pressed = false
-                            voice.end()
+                            guard voice.active else { return }
+                            // A quick tap keeps listening (tap again or pause to send); a hold sends on release.
+                            if Date.now.timeIntervalSince(pressedAt) < 0.35 { tapped = true } else { stop() }
                         }
                 )
-                .accessibilityLabel("Hold to say an edit")
+                .onAppear { voice.onSilence = { if !pressed { stop() } } }
+                .accessibilityLabel(voice.active ? "Stop and send the edit" : "Tap or hold to say an edit")
                 .accessibilityAddTraits(.isButton)
             Button { model.editForMe() } label: {
                 Capsule(style: .circular)
