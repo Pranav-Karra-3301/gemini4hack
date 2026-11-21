@@ -67,7 +67,7 @@ final class ShaderAgent {
             do {
                 guard let gemini else { throw GeminiDirect.Failure.noKey }
                 var opts = GeminiDirect.Options(system: Self.system)
-                opts.thinking = nil
+                opts.thinking = "low"
                 opts.timeout = 60
                 for try await delta in gemini.stream(model: GeminiDirect.strongModel, contents: contents, options: opts) {
                     text += delta
