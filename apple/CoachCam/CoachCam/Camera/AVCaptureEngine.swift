@@ -28,6 +28,15 @@ final class AVCaptureEngine: NSObject, CaptureEngine, @unchecked Sendable {
     private let videoQueue = DispatchQueue(label: "coachcam.camera.video", qos: .userInitiated)
     private let photoOutput = AVCapturePhotoOutput()
     private let videoOutput = AVCaptureVideoDataOutput()
+    /// Live depth for the viewfinder's depth tile (LiDAR camera only). Its connection is enabled
+    /// only while the tile is on; photo depth does not use it.
+    private let depthOutput = AVCaptureDepthDataOutput()
+    private let depthQueue = DispatchQueue(label: "coachcam.camera.depth", qos: .utility)
+    /// `queue` only: the setting, and whether the depth output joined the session.
+    private var wantLiveDepth = false
+    private var hasLiveDepth = false
+    /// `depthQueue` only: last rendered depth frame (throttles to ~15 fps).
+    private var lastDepthAt: CFTimeInterval = 0
     private var configured = false
     private var observations: [NSKeyValueObservation] = []
     private var inFlight: [Int64: PhotoCaptureDelegate] = [:]
@@ -37,6 +46,7 @@ final class AVCaptureEngine: NSObject, CaptureEngine, @unchecked Sendable {
     /// Shared with KVO callbacks and the video queue.
     private let lock = NSLock()
     private var sink: FrameSink?
+    private var depthHandler: (@MainActor (LiveDepthFrame?) -> Void)?
     private var rotation: CGFloat = 90
     private var publishPending = false
     private var lastPriorityStep: CFTimeInterval = 0
@@ -73,6 +83,14 @@ final class AVCaptureEngine: NSObject, CaptureEngine, @unchecked Sendable {
 
     func setCaptureRotation(_ degrees: CGFloat) {
         lock.withLock { rotation = degrees }
+    }
+
+    func setLiveDepth(_ on: Bool, handler: (@MainActor (LiveDepthFrame?) -> Void)?) {
+        lock.withLock { depthHandler = on ? handler : nil }
+        queue.async {
+            self.wantLiveDepth = on
+            if self.hasLiveDepth { self.depthOutput.connection(with: .depthData)?.isEnabled = on }
+        }
     }
 
     /// The physical wide camera: virtual multi-lens devices refuse custom exposure and manual lens
@@ -114,6 +132,14 @@ final class AVCaptureEngine: NSObject, CaptureEngine, @unchecked Sendable {
             session.addOutput(videoOutput)
         }
         Self.selectDepthFormat(device)
+        if !device.activeFormat.supportedDepthDataFormats.isEmpty, session.canAddOutput(depthOutput) {
+            session.addOutput(depthOutput)
+            depthOutput.isFilteringEnabled = true
+            depthOutput.alwaysDiscardsLateDepthData = true
+            depthOutput.setDelegate(self, callbackQueue: depthQueue)
+            depthOutput.connection(with: .depthData)?.isEnabled = wantLiveDepth
+            hasLiveDepth = true
+        }
         // Photos: Core keeps originals up to 4032 px, so skip 48 MP (faster capture, smaller upload).
         let dims = device.activeFormat.supportedMaxPhotoDimensions
         if let best = dims.filter({ max($0.width, $0.height) <= 4032 }).max(by: { $0.width * $0.height < $1.width * $1.height })
@@ -597,6 +623,85 @@ extension AVCaptureEngine: AVCaptureVideoDataOutputSampleBufferDelegate {
         guard let sink = frameSink, let pb = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         // Buffers stay sensor-native (landscape); the sink rotates only the frames it sends.
         sink.offer(pixelBuffer: pb, orientation: FrameGeometry.orientation(rotation: lock.withLock { rotation }))
+    }
+}
+
+extension AVCaptureEngine: AVCaptureDepthDataOutputDelegate {
+    func depthDataOutput(_ output: AVCaptureDepthDataOutput, didOutput depthData: AVDepthData,
+                         timestamp: CMTime, connection: AVCaptureConnection) {
+        let now = CACurrentMediaTime()
+        guard now - lastDepthAt >= 1.0 / 15 else { return }
+        lastDepthAt = now
+        let (handler, degrees) = lock.withLock { (depthHandler, rotation) }
+        guard let handler else { return }
+        let frame = LiveDepthFrame.render(depthData, orientation: FrameGeometry.orientation(rotation: degrees))
+        DispatchQueue.main.async { MainActor.assumeIsolated { handler(frame) } }
+    }
+}
+
+extension LiveDepthFrame {
+    /// Navy → blue → white ramp on inverse depth (near = bright), range from the frame's 2nd–98th
+    /// percentiles. Subsampled to ≤ 160 px wide: the tile is ~100 pt.
+    static func render(_ data: AVDepthData, orientation: CGImagePropertyOrientation) -> LiveDepthFrame? {
+        let d = data.depthDataType == kCVPixelFormatType_DepthFloat32
+            ? data : data.converting(toDepthDataType: kCVPixelFormatType_DepthFloat32)
+        let pb = d.depthDataMap
+        CVPixelBufferLockBaseAddress(pb, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(pb, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(pb) else { return nil }
+        let w = CVPixelBufferGetWidth(pb), h = CVPixelBufferGetHeight(pb), rowBytes = CVPixelBufferGetBytesPerRow(pb)
+        let step = max(1, w / 160)
+        let ow = w / step, oh = h / step
+        guard ow > 1, oh > 1 else { return nil }
+        var depth = [Float](repeating: 0, count: ow * oh)
+        var valid: [Float] = []
+        valid.reserveCapacity(ow * oh)
+        var centre: [Float] = []
+        let cx = (ow * 2 / 5)..<(ow * 3 / 5), cy = (oh * 2 / 5)..<(oh * 3 / 5)
+        for y in 0..<oh {
+            let row = base.advanced(by: y * step * rowBytes).assumingMemoryBound(to: Float32.self)
+            for x in 0..<ow {
+                let v = row[x * step]
+                guard v.isFinite, v > 0 else { continue }
+                depth[y * ow + x] = v
+                valid.append(v)
+                if cx.contains(x), cy.contains(y) { centre.append(v) }
+            }
+        }
+        guard valid.count > 16 else { return nil }
+        valid.sort()
+        let near = valid[valid.count / 50], far = valid[valid.count * 49 / 50]
+        let invNear = 1 / max(near, 0.05), invFar = 1 / max(far, near + 0.05)
+        let span = max(invNear - invFar, 1e-4)
+        var rgba = [UInt8](repeating: 0, count: ow * oh * 4)
+        for i in 0..<(ow * oh) {
+            let v = depth[i]
+            let c = v > 0 ? ramp[Int(min(max((1 / v - invFar) / span, 0), 1) * 255)] : (UInt8(6), UInt8(9), UInt8(20))
+            rgba[i * 4] = c.0; rgba[i * 4 + 1] = c.1; rgba[i * 4 + 2] = c.2; rgba[i * 4 + 3] = 255
+        }
+        guard let provider = CGDataProvider(data: Data(rgba) as CFData),
+              let image = CGImage(width: ow, height: oh, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: ow * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                                  provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+        else { return nil }
+        var metres: Double?
+        if centre.count > 4 {
+            centre.sort()
+            metres = Double(centre[centre.count / 2])
+        }
+        return LiveDepthFrame(image: image, orientation: orientation, subjectMetres: metres)
+    }
+
+    /// 256-step ramp: deep navy (far) → Gemini-ish blue → white (near).
+    private static let ramp: [(UInt8, UInt8, UInt8)] = (0..<256).map { i in
+        let t = Double(i) / 255
+        let stops: [(Double, Double, Double)] = [(0.03, 0.05, 0.16), (0.10, 0.28, 0.70), (0.45, 0.70, 1.0), (1, 1, 1)]
+        let p = t * Double(stops.count - 1)
+        let k = min(Int(p), stops.count - 2), f = p - Double(k)
+        let a = stops[k], b = stops[k + 1]
+        func c(_ x: Double, _ y: Double) -> UInt8 { UInt8((x + (y - x) * f) * 255) }
+        return (c(a.0, b.0), c(a.1, b.1), c(a.2, b.2))
     }
 }
 
