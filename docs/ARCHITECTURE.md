@@ -309,8 +309,8 @@ Main env knobs: `COACH_PORT`, `COACH_LAN`, `COACH_TOKEN`, `COACH_LAN_HOST`, `COA
 - The Live spend guard (`LIVE_MAX_STARTS` per `LIVE_BUDGET_WINDOW_MIN`, CORE_API §2) caps
   session starts, not minutes: a few long sessions can still add up. CoachLive ignores
   `usageMetadata`, so Core can't meter actual spend.
-- Check-ins every 4 s dominate Live cost; the web live client has no frame change gate and ticks
-  regardless.
+- Check-ins dominate Live cost. Both live clients send frames only when the picture changed and
+  tick every 4 s only after a new frame (else every 12 s), so a moving scene still costs the most.
 - `/api/cam/understand` could move to Flash-Lite (1.1 s vs 4 s, ~8× cheaper) once checked on
   real voice clips.
 - Argon (regions) doubles in price on 2026-12-01.

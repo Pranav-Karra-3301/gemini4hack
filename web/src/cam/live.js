@@ -1,19 +1,23 @@
 // Coach Cam engine "live" (brains): Gemini Live over WS /api/live (CAM_CONTRACT.md).
 //
 // Mic PCM16 (16 kHz, ~100 ms chunks) streams continuously as realtimeInput.audio and the raw
-// camera frame goes up at 1 fps as realtimeInput.video. The model answers with tool calls
+// camera frame goes up as realtimeInput.video at most 1 fps, only when the picture changed
+// (frame-gate.js, the same rule as CoachLive). The model answers with tool calls
 // (-> bus events, each acknowledged with a SILENT toolResponse) and 24 kHz audio (-> player).
 // Because the Live model only takes a turn when the user speaks, the engine also sends a short
-// "[tick]" text check-in every few seconds while nobody is talking, so the arrows keep updating.
+// "[tick]" text check-in every few seconds while nobody is talking, so the arrows keep updating
+// (every 4 s if a new frame went out since the last one, else every 12 s, like CoachCam).
 // The server sends setup and rotates the upstream session on goAway; if the browser socket
 // drops, the engine reconnects with the last session resumption handle.
 
 import { createPlayer, unlockAudio } from './audio.js';
 import { INTENTS, MODES, MOVES, REACTIONS } from './bus.js';
+import { createFrameGate, lumaThumb } from './frame-gate.js';
 
 const SOURCE = 'live';
 const FRAME_MS = 1000; // Live accepts at most 1 fps
 const TICK_MS = 4000;
+const IDLE_TICK_MS = 12000; // nothing new was seen since the last tick
 const SCENE_MS = 8000; // Hydrogen scene check (who to keep in frame, scenery to reveal)
 const SETUP_TIMEOUT_MS = 12000;
 const STRENGTHS = ['small', 'medium', 'large'];
@@ -78,7 +82,11 @@ export function createEngine(ctx) {
   let offs = [];
   let startResolve = null;
   let abort = null;
-  const frames = []; // last few frames sent, for the scene check [{blob, t}]
+  const frames = []; // last few frames grabbed, for the scene check [{blob, t}]
+  // minInterval a bit under FRAME_MS so the loop's timer jitter doesn't skip a whole second.
+  const gate = createFrameGate({ minInterval: FRAME_MS - 100 });
+  let framesSent = 0;
+  let framesAtLastTick = -1;
   // From the scene check: who must stay fully in frame, the scenery to reveal, selfie or not.
   const scene = { keep: [], scene: '', selfie: false, key: '' };
   let lastHeard = '';
@@ -265,6 +273,7 @@ export function createEngine(ctx) {
     }
     if (m.setupComplete) {
       ready = true;
+      gate.reset(); // a (re)connected session gets the current frame right away
       retry = 0;
       responding = false;
       userActive = false;
@@ -352,9 +361,13 @@ export function createEngine(ctx) {
         try {
           const blob = await ctx.grabFrame(768, 0.7);
           if (blob && ready) {
-            send({ realtimeInput: { video: { data: await blobToB64(blob), mimeType: 'image/jpeg' } } });
             frames.push({ blob, t: performance.now() });
             if (frames.length > 3) frames.shift();
+            const thumb = await lumaThumb(blob);
+            if (ready && gate.offer(thumb, performance.now()) === 'send'
+                && send({ realtimeInput: { video: { data: await blobToB64(blob), mimeType: 'image/jpeg' } } })) {
+              framesSent += 1;
+            }
           }
         } catch (e) {
           console.warn('live: frame grab failed', e);
@@ -438,10 +451,12 @@ export function createEngine(ctx) {
       const userEnd = Math.max(userEndAt, (mic && mic.lastSpeechEndedAt) || 0);
       // The model sometimes stays silent after the user talks (proactive audio): nudge it.
       const unanswered = userEndAt > lastActivity && userEndAt > lastTickAt && now - userEndAt >= 1200;
-      const routine = now - lastTickAt >= TICK_MS && now - userEnd >= 2000 && now - lastActivity > 1500;
+      const seenNew = framesSent !== framesAtLastTick || now - lastTickAt >= IDLE_TICK_MS;
+      const routine = now - lastTickAt >= TICK_MS && seenNew && now - userEnd >= 2000 && now - lastActivity > 1500;
       if (quiet && (unanswered || routine)) {
         if (send({ realtimeInput: { text: tickText() } })) {
           lastTickAt = now;
+          framesAtLastTick = framesSent;
           markTrigger(now);
         }
       }
