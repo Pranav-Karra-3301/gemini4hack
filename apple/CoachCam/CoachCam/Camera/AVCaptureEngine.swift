@@ -638,7 +638,10 @@ private final class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegat
             shot.iso = iso
             shot.shutter = shutter
             shot.hasDepth = hasDepth
-            shot.depthPNG = depth.flatMap { PhotoDepth.depthPNGmm(from: $0, orientation: orientation) }
+            // Depth Pro 2 on device when bundled (#41), else the photo's LiDAR/AVDepthData.
+            shot.depthPNG = PhotoDepth.depthPNGmm(fromPhotoData: data)
+                ?? depth.flatMap { PhotoDepth.depthPNGmm(from: $0, orientation: orientation) }
+            shot.hasDepth = shot.depthPNG != nil
             done(.success(shot))
         }
     }

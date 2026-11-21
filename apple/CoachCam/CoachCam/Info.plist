@@ -20,36 +20,16 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>dev.coach.pair</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>coach</string>
-			</array>
-		</dict>
-	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Heliocam is a camera: it shows the viewfinder, lets the coach set focus, exposure and white balance, and scans your Mac's pairing code.</string>
+	<string>Heliocam is a camera: it shows the viewfinder and lets the coach set focus, exposure and white balance.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Talk to the coach while you shoot. Your voice goes straight to Gemini Live and is not recorded.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Talk to the coach while you shoot. Your words are recognized on this iPhone and sent to the coach as text.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Save the photos you take to your library.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>Find Coach Core on your Mac and sync your shots to it over Wi-Fi.</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_coachcore._tcp</string>
-	</array>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
-	</dict>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

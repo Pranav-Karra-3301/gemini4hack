@@ -17,9 +17,6 @@ enum LaunchOptions {
         #endif
     }
     #if DEBUG
-    /// `-coreURL http://127.0.0.1:8797` (with optional `-coreToken`): skip pairing.
-    static var coreURL: String? { UserDefaults.standard.string(forKey: "coreURL") }
-    static var coreToken: String? { UserDefaults.standard.string(forKey: "coreToken") }
     /// `-demoCoach YES`: play scripted tool calls (no Gemini) to show the dials moving.
     static var demoCoach: Bool { UserDefaults.standard.bool(forKey: "demoCoach") }
     /// `-coachPrompt "…"`: typed user turn sent once Live is up (QA without a mic).
@@ -27,36 +24,25 @@ enum LaunchOptions {
     #endif
 }
 
-/// App state: pairing with Core, the camera, the instruments, the coach, the review and sync.
+/// App state: the camera, the instruments, the coach, the local roll and the shot viewer.
+/// Standalone: every Gemini call goes straight from the phone (GeminiDirect).
 @MainActor
 @Observable
 final class AppModel: CoachHost {
-    enum Link: Equatable {
-        case unpaired, checking, online
-        case offline(String)
-        case unauthorized
-    }
-
     let camera: CameraController
     let coach = CoachSession()
-    let sync = SyncModel()
-    let review = InstantReview()
+    /// Every shot, kept in the app's documents (the roll).
+    let shots = ShotStore()
     let reveal = RevealModel()
-    /// Talk to edit the open shot (the shot viewer's mic, #34).
+    /// Hold-to-talk edits of the open shot (on-device speech → Gemini → faders).
     let voice = VoiceEdit()
 
-    private(set) var pairing: Pairing?
-    private(set) var link: Link = .unpaired
-    /// Online over the USB cable (USBUplink) rather than the network.
-    private(set) var viaUSB = false
     private(set) var capturing = false
     /// Bumps on each capture (viewfinder blink).
     private(set) var shutterCount = 0
-    var showPairing = false
     var showSettings = false
-    /// Session roll (#34): this session's shots, keepers first.
+    /// The gallery (the roll button next to the shutter).
     var showRoll = false
-    let launchedAt = Date()
     /// The 3D exploded depth view of the open shot (#34).
     var explode: ExplodeItem?
 
@@ -72,11 +58,6 @@ final class AppModel: CoachHost {
     private(set) var drumActor: CoachActor = .user
     private(set) var rulerActor: CoachActor = .user
 
-    // MARK: Depth scan (the shutter's ring while Core analyses the last shot)
-
-    enum Scan: Equatable { case idle, scanning(Double), ready }
-    private(set) var scan: Scan = .idle
-
     var coachEnabled: Bool { didSet { defaults.set(coachEnabled, forKey: "coach.enabled") } }
     var voiceOn: Bool {
         didSet {
@@ -86,18 +67,10 @@ final class AppModel: CoachHost {
     }
     var saveToPhotos: Bool { didSet { defaults.set(saveToPhotos, forKey: "photos.save") } }
 
-    @ObservationIgnored private(set) var client: CoachClient?
-    @ObservationIgnored private let store = PairingStore()
     @ObservationIgnored private let defaults = UserDefaults.standard
-    @ObservationIgnored private var connecting = false
     @ObservationIgnored private var actorReset: Task<Void, Never>?
     @ObservationIgnored private var lastAutoRefresh = Date.distantPast
     @ObservationIgnored private var lastFocusWrite = Date.distantPast
-    @ObservationIgnored private var eventsTask: Task<Void, Never>?
-    @ObservationIgnored private var scanTask: Task<Void, Never>?
-    @ObservationIgnored private var scanEntry: String?
-    @ObservationIgnored private var scanShot: String?
-    @ObservationIgnored private var scanTarget = 0.0
 
     init() {
         defaults.register(defaults: ["coach.enabled": true, "coach.voice": true, "photos.save": true])
@@ -109,53 +82,31 @@ final class AppModel: CoachHost {
         coach.host = self
         camera.engine.frameSink = FrameSinks([coach.frames, SubjectTracker.shared])
         camera.onSnapshot = { [weak self] s in self?.syncInstruments(s) }
-        review.speaker = { [weak self] line, verdict in self?.sayReview(line, verdict: verdict) }
-        reveal.speaker = { [weak self] line in self?.sayReview(line, verdict: nil, reveal: true) }
+        reveal.speaker = { [weak self] line in
+            guard self?.voiceOn == true else { return }
+            Speaker.shared.say(line)
+        }
         RevealModel.localDepthPNG = { PhotoDepth.depthPNGmm(fromPhotoData: $0) }
-        voice.register(into: reveal.renderer)
-        reveal.onMic = { [weak self] in self?.toggleVoiceEdit() }
+        voice.onRelease = { [weak self] wav in self?.reveal.voiceReleased(wav: wav) }
+        voice.onText = { [weak self] text in self?.reveal.voiceEdit(text) }
         // The shot viewer pauses the camera coach (Live frames, ticks, director) so it never talks
         // about the camera behind the photo; a new shot or dismiss ends voice edit on the old one.
         reveal.onPresent = { [weak self] shown in
             guard let self else { return }
-            if self.voice.isLive { self.voice.stop() }
+            if self.voice.isListening { self.voice.cancel() }
             if shown { self.coach.stop() } else { Task { await self.startCoachIfReady() } }
         }
-        reveal.onOpenRoll = { [weak self] in self?.showRoll = true }
         reveal.onShow3D = { [weak self] photo, depth in
             guard let cg = photo.cgImage else { return }
             self?.explode = ExplodeItem(photo: cg, depthPNG: depth)
-        }
-        sync.clientProvider = { [weak self] in self?.link == .online ? self?.client : nil }
-        sync.onUnauthorized = { [weak self] in
-            self?.link = .unauthorized
-            self?.showPairing = true
-        }
-        sync.onNetworkBack = { [weak self] in
-            guard let self, case .offline = self.link else { return }
-            Task { await self.connect() }
-        }
-        sync.onOffline = { [weak self] _ in
-            // The saved address stopped answering (e.g. Wi-Fi off, cable on): look again.
-            guard let self, self.link == .online else { return }
-            Task { await self.connect() }
-        }
-        sync.onUploaded = { [weak self] entry, shot in
-            self?.reveal.uploaded(entry: entry, shot: shot)
-            self?.uploaded(entry: entry, shot: shot)
-        }
-        // Plugging or unplugging the cable re-connects (cable first, then the network).
-        NotificationCenter.default.addObserver(forName: USBUplink.linkDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in await self?.connect() }
         }
     }
 
     // MARK: Lifecycle
 
     func launch() async {
-        async let cam: Void = camera.start()
-        await connect()
-        await cam
+        await camera.start()
+        DepthPro2.warmUp()   // so the first shot already gets Depth Pro 2 depth
         #if DEBUG
         if LaunchOptions.demoCoach {
             await DemoScript.run(self)
@@ -170,9 +121,7 @@ final class AppModel: CoachHost {
         case .active:
             Task {
                 await camera.start()
-                if link != .online { await connect() }
                 await startCoachIfReady()
-                sync.kick()
             }
         case .background:
             coach.stop()
@@ -183,7 +132,7 @@ final class AppModel: CoachHost {
     }
 
     func startCoachIfReady() async {
-        guard coachEnabled, link == .online, camera.isRunning, !coach.isActive, !reveal.isShown else { return }
+        guard coachEnabled, camera.isRunning, !coach.isActive, !reveal.isShown else { return }
         #if DEBUG
         if LaunchOptions.demoCoach { return }   // the scripted coach only
         #endif
@@ -196,34 +145,22 @@ final class AppModel: CoachHost {
         #endif
     }
 
-    /// Live dot tap: pair, reconnect, or pause/resume the coach.
+    /// Live dot tap: pause or resume the coach.
     func statusTapped() {
-        switch link {
-        case .unpaired, .unauthorized: showPairing = true
-        case .offline, .checking: Task { await connect(); await startCoachIfReady() }
-        case .online:
-            if coach.isActive {
-                coach.stop()
-                coachEnabled = false
-            } else {
-                coachEnabled = true
-                Task { await startCoachIfReady() }
-            }
+        if coach.isActive {
+            coach.stop()
+            coachEnabled = false
+        } else {
+            coachEnabled = true
+            Task { await startCoachIfReady() }
         }
     }
 
-    /// The shot viewer's mic: Gemini Live in edit mode on the open shot. The camera coach's Live
-    /// session pauses meanwhile (one LiveAudio engine at a time) and resumes when editing stops.
-    func toggleVoiceEdit() {
-        if voice.isLive {
-            voice.stop()
-            if coachEnabled, link == .online { Task { await startCoachIfReady() } }
-            return
-        }
-        guard let client = coachClient, let id = reveal.shotID else { return }
-        coach.stop()
-        voice.seed(values: reveal.namedValues, layers: reveal.currentLayers)
-        Task { await voice.start(client: client, shotID: id) }
+    /// Opens a shot from the gallery in the shot viewer.
+    func open(_ shot: LocalShot) {
+        guard let jpeg = try? Data(contentsOf: shot.jpegURL) else { return }
+        let file = shot.fileURL.flatMap { try? Data(contentsOf: $0) }
+        reveal.begin(jpeg: jpeg, photoData: file)
     }
 
     /// The mic key: talk to Gemini. Starts the coach if it's off, else toggles voice mode.
@@ -234,135 +171,7 @@ final class AppModel: CoachHost {
         }
         voiceOn = true
         coachEnabled = true
-        if link == .online { Task { await startCoachIfReady() } } else { statusTapped() }
-    }
-
-    // MARK: Pairing
-
-    /// Checks the saved pairing; if that address doesn't answer, finds Core again over Bonjour on
-    /// any link (Wi-Fi or the USB hotspot cable) and keeps the token.
-    func connect() async {
-        guard !connecting else { return }
-        connecting = true
-        defer { connecting = false }
-        var saved = store.load()
-        #if DEBUG
-        if let url = LaunchOptions.coreURL, let p = Pairing(address: url, token: LaunchOptions.coreToken) { saved = p }
-        #endif
-        // The USB cable first: Core sees cable requests as loopback, so no pairing is needed.
-        USBUplink.shared.start()
-        if await USBUplink.shared.waitForLink() {
-            let c = CoachClient(baseURL: USBUplink.shared.baseURL, token: saved?.token)
-            if case .ok = await Self.check(c) {
-                setOnline(saved, c, usb: true)
-                showPairing = false
-                return
-            }
-        }
-        guard let p = saved else {
-            viaUSB = false
-            link = .unpaired
-            #if DEBUG
-            if LaunchOptions.demoCoach { return }
-            #endif
-            showPairing = true
-            return
-        }
-        pairing = p
-        if link != .online { link = .checking }
-        let c = CoachClient(pairing: p)
-        switch await Self.check(c) {
-        case .ok:
-            setOnline(p, c)
-        case .unauthorized:
-            link = .unauthorized
-            viaUSB = false
-            showPairing = true
-        case .failed(let message):
-            viaUSB = false
-            #if DEBUG
-            if LaunchOptions.coreURL != nil { link = .offline(message); return }
-            #endif
-            switch await CoreFinder.find(token: p.token) {
-            case .found(let moved):
-                if moved.host != p.host || moved.port != p.port { store.updateAddress(host: moved.host, port: moved.port) }
-                setOnline(moved, CoachClient(pairing: moved))
-            case .unauthorized:
-                link = .unauthorized
-                showPairing = true
-            case .none:
-                link = .offline(message)
-            }
-        }
-    }
-
-    private func setOnline(_ p: Pairing?, _ c: CoachClient, usb: Bool = false) {
-        let changed = client?.baseURL != c.baseURL
-        pairing = p ?? pairing
-        client = c
-        viaUSB = usb
-        link = .online
-        #if DEBUG
-        print("CoachCam[link] online via \(usb ? "USB cable" : c.baseURL.absoluteString)")
-        #endif
-        if changed || eventsTask == nil { startEvents(c) }
-        sync.kick()
-    }
-
-    /// Saves a pairing after checking it against Core (or the same Core on another link).
-    /// Returns an error message on failure.
-    func pair(_ p: Pairing) async -> String? {
-        var p = p
-        var c = CoachClient(pairing: p)
-        var result = await Self.check(c)
-        if case .failed = result, case .found(let moved) = await CoreFinder.find(token: p.token, timeout: 4) {
-            p = moved
-            c = CoachClient(pairing: moved)
-            result = .ok
-        }
-        switch result {
-        case .ok:
-            do { try store.save(p) } catch { return "Couldn't save the pairing: \(error.localizedDescription)" }
-            coach.stop()
-            setOnline(p, c)
-            showPairing = false
-            await startCoachIfReady()
-            return nil
-        case .unauthorized:
-            return "Coach Core refused the code. Show a fresh QR on the Mac and scan again."
-        case .failed(let m):
-            return m
-        }
-    }
-
-    func forgetPairing() {
-        coach.stop()
-        store.clear()
-        eventsTask?.cancel()
-        eventsTask = nil
-        pairing = nil
-        client = nil
-        link = .unpaired
-    }
-
-    enum Check: Sendable { case ok, unauthorized, failed(String) }
-
-    /// `GET /api/health` with a cap (an unreachable LAN address otherwise hangs for a minute).
-    nonisolated static func check(_ c: CoachClient, timeout: Double = 4) async -> Check {
-        await withTaskGroup(of: Check.self) { g in
-            g.addTask {
-                do { _ = try await c.health(); return .ok }
-                catch CoachError.unauthorized { return .unauthorized }
-                catch { return .failed(CoachSession.describe(error)) }
-            }
-            g.addTask {
-                try? await Task.sleep(for: .seconds(timeout))
-                return .failed("Coach Core at \(c.baseURL.host() ?? "?") didn't answer. Same Wi-Fi, or the cable?")
-            }
-            let first = await g.next() ?? .failed("cancelled")
-            g.cancelAll()
-            return first
-        }
+        Task { await startCoachIfReady() }
     }
 
     // MARK: Camera ↔ instruments
@@ -461,8 +270,6 @@ final class AppModel: CoachHost {
 
     // MARK: CoachHost
 
-    var coachClient: CoachClient? { link == .online ? client : nil }
-
     var coachStateLine: String { camera.snapshot.stateLine }
 
     func coachSetCamera(_ settings: CameraSettings) async -> CameraSettings {
@@ -483,136 +290,19 @@ final class AppModel: CoachHost {
         capturing = true
         defer { capturing = false }
         shutterCount += 1
-        let snap = camera.snapshot
         let t0 = Date()
         do {
             let photo = try await camera.capture()
-            let online = link == .online ? client : nil
-            reveal.begin(jpeg: photo.jpeg, photoData: photo.fileData, client: online)
-            let reviewID = online != nil ? InstantReview.newID() : nil
-            let lines = Array(coach.lines.suffix(6))
-            let keep = coach.subject.map { [$0] }
-            let meta = ShotMeta(
-                source: "iphone", device: Self.deviceModel, takenAt: Self.iso8601.string(from: Date()),
-                iso: (photo.iso ?? snap.iso).rounded(), shutter: photo.shutter ?? snap.shutter,
-                ev: snap.ev, wbKelvin: snap.wbKelvin.rounded(), tint: snap.tint.rounded(),
-                lens: snap.lens.rawValue, zoom: (snap.zoom * 100).rounded() / 100, mode: snap.mode.rawValue,
-                focus: (snap.focus * 100).rounded() / 100, facing: "back", intent: coach.intent?.rawValue,
-                subject: coach.subject, keep: keep, scene: nil, coach: lines)
+            // The shot lands in the roll (the thumbnail flies in); the viewer opens only from it.
+            shots.add(jpeg: photo.jpeg, file: photo.fileData, thumbnail: photo.thumbnail)
             if saveToPhotos {
                 let file = photo.fileData
                 Task.detached(priority: .utility) { await PhotoLibrarySaver.save(file) }
             }
-            // Review first (a ≤1024 px copy): the full upload waits for its verdict (≤4 s) and
-            // carries `review_id`, so Core saves the review into the shot.
-            if let client = online, let reviewID {
-                let hold = sync.hold(seconds: 4)
-                let ctx = ReviewContext(
-                    reviewID: reviewID, intent: coach.intent?.rawValue, subject: coach.subject, keep: keep,
-                    scene: nil, heard: coach.lastHeard, coach: lines,
-                    settings: .init(mode: snap.mode.rawValue, lens: snap.lens.rawValue, zoom: (snap.zoom * 100).rounded() / 100,
-                                    iso: (photo.iso ?? snap.iso).rounded(), shutter: photo.shutter ?? snap.shutter,
-                                    ev: snap.ev, flash: snap.flash.rawValue))
-                review.start(client: client, jpeg: photo.jpeg, context: ctx, speak: voiceOn) { [weak self] in
-                    self?.sync.release(hold)
-                }
-            }
-            let entry = await sync.enqueue(jpeg: photo.jpeg, meta: meta, reviewID: reviewID, thumbnail: photo.thumbnail)
-            if let entry { reveal.track(entry: entry) }
-            if online != nil, let entry { beginScan(entry: entry) }
             coach.photoTaken(byCoach: byCoach)
-            return ["ok": true, "capture_ms": Int(Date().timeIntervalSince(t0) * 1000),
-                    "synced": online != nil, "depth": photo.hasDepth, "review": online != nil && voiceOn]
+            return ["ok": true, "capture_ms": Int(Date().timeIntervalSince(t0) * 1000), "depth": photo.hasDepth]
         } catch {
             return ["ok": false, "error": CoachSession.describe(error)]
-        }
-    }
-
-    /// The review's line in the coach's Gemini voice: through the Live session when it's up,
-    /// else Core's TTS (`/api/cam/say`, same voice) through the Live player. Voice off: silent.
-    private func sayReview(_ line: String, verdict: ReviewVerdict?, reveal fromReveal: Bool = false) {
-        guard voiceOn else { return }
-        // The shot reveal (#34) speaks its own fix; the review's verdict stays quiet under it.
-        if reveal.isShown, !fromReveal { return }
-        if !fromReveal, coach.speakReview(line, verdict: verdict?.rawValue) { return }
-        guard let client = coachClient else { return }
-        Task { [weak self] in
-            guard let wav = try? await CoreExtras.say(client: client, text: line), let pcm = CoreExtras.pcm(wav: wav) else { return }
-            await self?.coach.playSpeech(pcm24k: pcm)
-        }
-    }
-
-    // MARK: Depth scan: follow the shot through Core's pipeline
-
-    /// Stages counted for the ring (CORE_API.md §3): depth, score, regions, masks, suggest.
-    private static func finishedStages(_ s: Shot) -> Int {
-        let a = s.assets
-        let stages: [ShotAsset] = [a.depth, a.score, a.regions, a.masks, a.suggest]
-        return stages.filter { (x: ShotAsset) -> Bool in x.status == .done || x.status == .error }.count
-    }
-
-    private func beginScan(entry: String) {
-        scanEntry = entry
-        scanShot = nil
-        scanTarget = 0
-        scan = .scanning(0.02)
-        scanTask?.cancel()
-        scanTask = Task { [weak self] in
-            let t0 = Date()
-            var lastPoll = Date()
-            while !Task.isCancelled, let self {
-                try? await Task.sleep(for: .milliseconds(66))
-                guard case .scanning(let p) = self.scan else { return }
-                // Ease toward the finished share; creep a little inside the running stage.
-                let target = self.scanTarget
-                let next = p < target ? min(target, p + max((target - p) * 0.22, 0.004)) : min(p + 0.0011, target + 0.15, 0.97)
-                self.scan = .scanning(next)
-                if target >= 1 {
-                    self.scan = .scanning(1)
-                    try? await Task.sleep(for: .milliseconds(260))
-                    self.scan = .ready
-                    try? await Task.sleep(for: .seconds(1.8))
-                    if !Task.isCancelled, self.scan == .ready { self.scan = .idle }
-                    return
-                }
-                // Fallback poll in case the events stream is reconnecting.
-                if let id = self.scanShot, Date().timeIntervalSince(lastPoll) > 3, let c = self.client {
-                    lastPoll = Date()
-                    if let shot = try? await c.shot(id: id) { self.shotUpdated(shot) }
-                }
-                if Date().timeIntervalSince(t0) > 75 { self.scan = .idle; return }
-            }
-        }
-    }
-
-    private func uploaded(entry: String, shot: Shot) {
-        guard entry == scanEntry else { return }
-        scanShot = shot.id
-        shotUpdated(shot)
-    }
-
-    private func shotUpdated(_ shot: Shot) {
-        guard shot.id == scanShot, case .scanning = scan else { return }
-        scanTarget = max(scanTarget, Double(Self.finishedStages(shot)) / 5)
-        #if DEBUG
-        print("CoachCam[scan] \(shot.id) \(Self.finishedStages(shot))/5")
-        #endif
-    }
-
-    /// `GET /api/events` while online: shot updates drive the depth-scan ring.
-    private func startEvents(_ c: CoachClient) {
-        eventsTask?.cancel()
-        eventsTask = Task { [weak self] in
-            do {
-                for try await e in c.events() {
-                    guard !Task.isCancelled else { return }
-                    if case .shot(let shot) = e { self?.shotUpdated(shot) }
-                }
-            } catch {
-                #if DEBUG
-                print("CoachCam[events] ended: \(error)")
-                #endif
-            }
         }
     }
 

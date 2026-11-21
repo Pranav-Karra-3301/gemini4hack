@@ -107,7 +107,7 @@ final class CoachSession {
     /// Fast loop: one Decision call about every second.
     static let decideInterval: Duration = .milliseconds(1000)
     /// `move` drives the glow at p ≥ this when the top answer repeats; `ready` counts at p ≥ readyP.
-    static let moveP = 0.5
+    static let moveP = 0.4
     static let readyP = 0.7
     /// Minimum gap between cycles, and the re-check while nothing moves (not ready yet).
     static let minGap: TimeInterval = 0.8
@@ -285,7 +285,8 @@ final class CoachSession {
             }
             turn.append(GeminiDirect.user(responses))
             // Done when it only did UI moves; set_camera/take_photo results may need a follow-up.
-            if !reply.calls.contains(where: { $0.name == "set_camera" || $0.name == "take_photo" }) { break }
+            // Only a spoken request earns a follow-up call; otherwise the next frame continues (keeps turns ~3 s).
+            if user == nil || !reply.calls.contains(where: { $0.name == "set_camera" || $0.name == "take_photo" }) { break }
         }
         // Converged: always say "that's it" once, even if the model only called the tools.
         if ready, !wasReady, !spoke, !saidReady { speak("That's it. Take it.") }
@@ -333,7 +334,7 @@ final class CoachSession {
     private func decided(_ d: GeminiDirect.Decision) {
         let move = d.top("move")
         let readyP = d.probabilities["ready"]?["yes"] ?? 0
-        log.debug("decision \(d.milliseconds) ms: move \(move?.option ?? "-", privacy: .public) \(move?.p ?? 0) ready \(readyP)")
+        log.info("decision \(d.milliseconds) ms: move \(move?.option ?? "-", privacy: .public) \(move?.p ?? 0) ready \(readyP)")
         if let r = d.top("reaction"), r.p >= Self.moveP, r.option != "neutral",
            let reaction = UserReaction(rawValue: r.option) {
             self.reaction = reaction

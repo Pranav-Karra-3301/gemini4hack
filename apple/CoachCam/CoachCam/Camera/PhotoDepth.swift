@@ -3,9 +3,11 @@ import CoreImage
 import ImageIO
 import UniformTypeIdentifiers
 
-/// The depth that rides along with a capture (LiDAR-fused on Pro iPhones, dual-camera disparity
-/// otherwise), upright like the photo and in Core's `depth.png` format: 16-bit grayscale
+/// The depth of a photo, upright like the photo and in Core's `depth.png` format: 16-bit grayscale
 /// millimetres, 0 = unknown. Load the PNG with `EditRenderer.depthImage(pngData:)`.
+/// From photo data it prefers on-device Depth Pro 2 (`DepthPro2`, when the model is bundled) and
+/// falls back to the depth that rides along with the capture (LiDAR-fused on Pro iPhones,
+/// dual-camera disparity otherwise).
 enum PhotoDepth {
     /// The depth (or disparity) embedded in a HEIC/JPEG, plus the photo's EXIF orientation.
     static func depthData(fromPhotoData data: Data) -> (AVDepthData, CGImagePropertyOrientation)? {
@@ -32,8 +34,23 @@ enum PhotoDepth {
         CIImage(cvPixelBuffer: metres(from: depth, orientation: orientation))
     }
 
-    /// The photo's embedded depth as Core's `depth.png`; nil when the photo carries none.
+    /// The photo's depth as Core's `depth.png`: Depth Pro 2 when the model is bundled, else the
+    /// embedded depth; nil when neither is available. Runs the model synchronously (well under a
+    /// second once loaded), so call it off the main thread. On the main thread it won't wait for
+    /// the model to load: it starts loading it and uses the embedded depth this time.
     static func depthPNGmm(fromPhotoData data: Data) -> Data? {
+        if DepthPro2.isAvailable {
+            if Thread.isMainThread && !DepthPro2.isLoaded {
+                DepthPro2.warmUp()
+            } else {
+                do {
+                    let d = try DepthPro2.metres(fromPhotoData: data)
+                    if let png = pngMM(metres: d.metres, width: d.width, height: d.height) { return png }
+                } catch {
+                    print("PhotoDepth: Depth Pro 2 failed, using embedded depth: \(error)")
+                }
+            }
+        }
         guard let found = depthData(fromPhotoData: data) else { return nil }
         return depthPNGmm(from: found.0, orientation: found.1)
     }

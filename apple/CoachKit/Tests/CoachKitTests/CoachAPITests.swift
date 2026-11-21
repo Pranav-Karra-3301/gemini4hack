@@ -196,44 +196,6 @@ final class CoachAPITests: XCTestCase {
         }
         XCTAssertEqual(StubProtocol.requestCount, 1)
     }
-
-    // MARK: Pairing store
-
-    func testPairingStore() throws {
-        let suite = "coachkit.tests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let tokens = MemoryTokenStorage()
-        let store = PairingStore(defaults: defaults, tokens: tokens)
-        XCTAssertNil(store.load())
-        let p = Pairing(host: "192.168.1.20", port: 8787, token: "abc")
-        try store.save(p)
-        XCTAssertEqual(store.load(), p)
-        XCTAssertNil(defaults.string(forKey: "coach.pairing.token"), "token must not be in UserDefaults")
-        store.updateAddress(host: "192.168.1.31", port: 8788)
-        XCTAssertEqual(store.load(), Pairing(host: "192.168.1.31", port: 8788, token: "abc"))
-        store.clear()
-        XCTAssertNil(store.load())
-        XCTAssertNil(try tokens.readToken())
-    }
-
-    func testKeychainRoundTripWhenAllowed() throws {
-        try XCTSkipUnless(ProcessInfo.processInfo.environment["COACH_KEYCHAIN_TEST"] == "1",
-                          "set COACH_KEYCHAIN_TEST=1 to touch the login keychain")
-        let k = KeychainTokenStorage(service: "app.coach.core.tests", account: UUID().uuidString)
-        defer { try? k.writeToken(nil) }
-        try k.writeToken("t1")
-        XCTAssertEqual(try k.readToken(), "t1")
-        try k.writeToken("t2")
-        XCTAssertEqual(try k.readToken(), "t2")
-        try k.writeToken(nil)
-        XCTAssertNil(try k.readToken())
-    }
-
-    func testDiscoveryHostFormatting() {
-        XCTAssertEqual(DiscoveredCore(name: "Coach Core (Mac)", host: "192.168.1.20", port: 8787).pairing(token: "t"),
-                       Pairing(host: "192.168.1.20", token: "t"))
-    }
 }
 
 /// URLProtocol stub: one handler for all requests, records the count, streams chunked bodies.

@@ -29,12 +29,10 @@ struct CameraScreen: View {
         }
         .ignoresSafeArea()
         .background { ZStack { GXColor.void; GrainOverlay() }.ignoresSafeArea() }
-        .overlay { if app.reveal.isShown { ShotReveal(model: app.reveal).transition(.opacity) } }
-        .onChange(of: app.voice.values) { _, v in
-            if app.voice.isLive, app.reveal.isShown { app.reveal.show(values: v, layers: app.voice.layers) }
-        }
-        .onChange(of: app.reveal.isShown) { _, shown in if !shown, app.voice.isLive { app.toggleVoiceEdit() } }
+        .overlay { if app.showRoll { Gallery().transition(.opacity) } }
+        .overlay { if app.reveal.isShown { ShotReveal(model: app.reveal, voice: app.voice).transition(.opacity) } }
         .animation(.easeOut(duration: 0.2), value: app.reveal.isShown)
+        .animation(.easeOut(duration: 0.24), value: app.showRoll)
         .environment(fx)
         .environment(tilt)
         .environment(suggestion)
@@ -46,18 +44,9 @@ struct CameraScreen: View {
         .onChange(of: scenePhase) { _, p in if p == .active { tilt.start() } else if p == .background { tilt.stop() } }
         .onChange(of: app.coach.caption) { _, c in suggestion.feed(c) }
         .onChange(of: app.shutterCount) { _, _ in
-            fx.shot(lastThumb: app.sync.lastThumb, mockFrame: app.camera.isMock ? app.camera.mockFrame : nil)
+            fx.shot(lastThumb: app.shots.lastThumb, mockFrame: app.camera.isMock ? app.camera.mockFrame : nil)
         }
-        .sheet(isPresented: $app.showPairing) { PairingSheet() }
         .sheet(isPresented: $app.showSettings) { SettingsSheet() }
-        .sheet(isPresented: $app.showRoll) {
-            if let c = app.coachClient {
-                SessionRoll(client: c, since: app.launchedAt) { shot in
-                    app.showRoll = false
-                    Task { await app.reveal.open(shot: shot, client: c) }
-                }
-            }
-        }
         .fullScreenCover(item: $app.explode) { item in
             DepthExplodeView(photo: item.photo, depthPNG: item.depthPNG)
                 .ignoresSafeArea()
@@ -217,7 +206,6 @@ private struct GuideGlow: View {
             }
             return (Self.cue(g, tilt: tilt.angle), k)
         }
-        if let d = app.review.hint, d != .hold { return (Self.cue(d, tilt: tilt.angle), 0.6) }
         return (.hold, 1)
     }
 
@@ -267,11 +255,6 @@ private struct ViewfinderHUD: View {
                 .scaleEffect(0.4 + 0.6 * fx.dot)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(3)
-            LastShot()
-                .opacity(fx.thumb)
-                .offset(y: 12 * (1 - fx.thumb))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                .padding(12)
             Text("4:3")
                 .font(GXFont.mono(9))
                 .tracking(9 * 0.14)
@@ -288,8 +271,8 @@ private struct ViewfinderHUD: View {
     }
 }
 
-/// 6pt Gemini dot: lit while the coach is live, breathing while it connects, red when Core is
-/// unreachable or unpaired, dim when the coach is paused. Tap: pair / reconnect / pause.
+/// 6pt Gemini dot: lit while the coach is live, breathing while it connects, red when it failed,
+/// dim when the coach is paused. Tap: pause / resume. Long press: settings.
 private struct CoachDot: View {
     @Environment(AppModel.self) private var app
     @Environment(DeviceTilt.self) private var tilt
@@ -307,101 +290,21 @@ private struct CoachDot: View {
                     .opacity(k)
             }
             .frame(width: 44, height: 44)
-            .overlay(alignment: .leading) {
-                // The link type, only when it's the USB cable.
-                if app.viaUSB, app.link == .online {
-                    Text("USB")
-                        .font(GXFont.mono(8))
-                        .tracking(8 * 0.14)
-                        .foregroundStyle(GXColor.frost.opacity(0.5))
-                        .fixedSize()
-                        .upright(tilt)
-                        .offset(x: 30)
-                        .transition(.opacity)
-                }
-            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .animation(.easeOut(duration: 0.24), value: app.viaUSB)
-        .accessibilityLabel("Heliocam: \(label)\(app.viaUSB ? ", over USB" : "")")
+        .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in app.showSettings = true })
+        .accessibilityLabel("Heliocam: \(label)")
+        .accessibilityAction(named: "Settings") { app.showSettings = true }
     }
 
     private var state: (Color, Bool, Bool, String) {
-        switch app.link {
-        case .unpaired: return (GXColor.signal, true, false, "pair with your Mac")
-        case .unauthorized: return (GXColor.signal, true, false, "pair again")
-        case .offline: return (GXColor.signal, true, false, "Mac offline, tap to retry")
-        case .checking: return (GXColor.gemini, false, true, "finding your Mac")
-        case .online: break
-        }
         switch app.coach.phase {
         case .live: return (GXColor.gemini, true, false, "live")
         case .connecting, .reconnecting: return (GXColor.gemini, false, true, "connecting")
         case .failed: return (GXColor.signal, true, false, "failed, tap to retry")
         case .off: return (GXColor.frost.opacity(0.45), false, false, "paused, tap to start")
         }
-    }
-}
-
-/// The last shot, 40pt in the card's corner (tap: settings). A small dot shows sync trouble.
-private struct LastShot: View {
-    @Environment(AppModel.self) private var app
-    @Environment(StageFX.self) private var fx
-    @Environment(DeviceTilt.self) private var tilt
-
-    /// The previous shot stays put until the new one's depth scan finishes.
-    private var shown: CGImage? { fx.holdThumb ? fx.heldThumb : app.sync.lastThumb }
-
-    var body: some View {
-        Button { app.showSettings = true } label: {
-            ZStack {
-                if let img = shown {
-                    Image(decorative: img, scale: 1).resizable().scaledToFill()
-                        .id(ObjectIdentifier(img))
-                        .transition(.opacity.combined(with: .scale(scale: 1.3)))
-                } else {
-                    GXColor.night
-                }
-            }
-            .frame(width: 38, height: 38)
-            .upright(tilt)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(GXColor.frost.opacity(0.3), lineWidth: 1))
-            .frame(width: 40, height: 40)
-            .shadow(color: .black.opacity(0.4), radius: 5, y: 4)
-            .overlay(alignment: .topTrailing) { SyncDot().offset(x: 3, y: -3) }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Last shot and settings, \(syncLabel)")
-    }
-
-    private var syncLabel: String {
-        switch app.sync.status {
-        case .uploading: return "syncing to the Mac"
-        case .synced: return "synced"
-        case .queued: return "\(app.sync.pending) waiting to sync"
-        case .failed(let m): return "sync failed: \(m)"
-        case .idle: return "no shots yet"
-        }
-    }
-}
-
-private struct SyncDot: View {
-    @Environment(AppModel.self) private var app
-
-    var body: some View {
-        Group {
-            switch app.sync.status {
-            case .queued, .failed:
-                Circle().fill(GXColor.signal).frame(width: 7, height: 7)
-                    .overlay(Circle().stroke(GXColor.void, lineWidth: 1.5))
-            default:
-                EmptyView()
-            }
-        }
-        .animation(.easeOut(duration: 0.24), value: app.sync.status)
     }
 }
 
@@ -428,10 +331,7 @@ private struct InstrumentPanel: View {
     @Environment(StageFX.self) private var fx
     @Environment(DeviceTilt.self) private var tilt
 
-    private var scanning: Bool {
-        if fx.scanOn { return true }
-        if case .scanning = app.scan { return true } else { return false }
-    }
+    private var scanning: Bool { fx.scanOn }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -487,7 +387,7 @@ private struct Keys: View {
         let engineUp = audio?.isRunning ?? false
         let listening = app.voiceOn && app.coach.phase == .live && engineUp
         HStack(spacing: 0) {
-        CoachKeys(shutter: shutter, listening: listening,
+            CoachKeys(shutter: shutter, listening: listening,
                   level: listening ? Double(audio?.inputLevel ?? 0) : 0,
                   onMic: {
                       // Voice on and live but the engine is down: bring the mic back, don't mute.
@@ -498,43 +398,60 @@ private struct Keys: View {
                       }
                   },
                   onShutter: { Task { await app.capture() } })
-            // Last shot → session roll (#34); without a roll, the last reveal again.
-            Button { if let open = app.reveal.onOpenRoll { open() } else { app.reveal.reopen() } } label: {
-                ZStack {
-                    if let img = app.sync.lastThumb { Image(decorative: img, scale: 1).resizable().scaledToFill() } else { GXColor.night }
-                }
-                .frame(width: 56, height: 56)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .padding(.trailing, 16)
-            .accessibilityLabel("Session roll")
+            RollKey()
+                .padding(.leading, -4)   // the keys' 12 pt gap (CoachKeys pads 16 on each side)
+                .padding(.trailing, 16)
         }
     }
 
     private var shutter: CoachKeys.Shutter {
-        switch app.scan {
-        case .scanning(let p): return .scanning(p)
-        case .ready: return .depthReady
-        case .idle:
-            if fx.check { return .depthReady }
-            return app.coach.ready ? .ready : .idle
+        if fx.check { return .depthReady }
+        return app.coach.ready ? .ready : .idle
+    }
+}
+
+/// The one gallery entry point: the newest shot, the keys' height (72 pt) and radius. A fresh
+/// shot lands here (the previous one holds until the capture flash and sweep finish); tap opens
+/// the gallery.
+private struct RollKey: View {
+    @Environment(AppModel.self) private var app
+    @Environment(StageFX.self) private var fx
+    @Environment(DeviceTilt.self) private var tilt
+
+    private var shown: CGImage? { fx.holdThumb ? fx.heldThumb : app.shots.lastThumb }
+
+    var body: some View {
+        Button { if !app.shots.shots.isEmpty { app.showRoll = true } } label: {
+            ZStack {
+                GXColor.night
+                if let img = shown {
+                    Image(decorative: img, scale: 1).resizable().scaledToFill()
+                        .upright(tilt)
+                        .id(ObjectIdentifier(img))
+                        .transition(.opacity.combined(with: .scale(scale: 1.3)))
+                }
+            }
+            .frame(width: 72, height: 72)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(GXColor.frost.opacity(0.14), lineWidth: 1))
+            .contentShape(Rectangle())
         }
+        .buttonStyle(KeyPressStyle())
+        .animation(.spring(response: 0.42, dampingFraction: 0.7), value: shown.map(ObjectIdentifier.init))
+        .accessibilityLabel(app.shots.shots.isEmpty ? "No shots yet" : "Gallery")
     }
 }
 
 // MARK: - Words, kept small
 
 /// Bottom of the card (the user's bottom when sideways): the user's own words as a faint "you"
-/// line while they speak, and after a shot the review as chips (verdict, then icon + ≤8 words
-/// each). The coach's spoken line is the yellow `SuggestionTag` at the top.
+/// line while they speak. The coach's spoken line is the yellow `SuggestionTag` at the top.
 private struct TalkStack: View {
     @Environment(AppModel.self) private var app
     @Environment(DeviceTilt.self) private var tilt
 
     var body: some View {
-        let review = app.review
-        let showReview = review.visible && review.verdict != nil && !app.reveal.isShown
         VStack(spacing: 6) {
             if let heard = app.coach.heard {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -551,91 +468,11 @@ private struct TalkStack: View {
                 .shadow(color: .black.opacity(0.6), radius: 6)
                 .transition(.opacity)
             }
-            if showReview {
-                ReviewChips(review: review)
-                    .contentShape(Rectangle())
-                    .onTapGesture { app.review.dismiss() }
-                    .transition(.asymmetric(insertion: .offset(y: 10).combined(with: .opacity),
-                                            removal: .opacity))
-                    .id(review.serial)
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .padding(.horizontal, 16)
-        // Portrait clears the thumbnail row; sideways the user's bottom is a long edge.
-        .padding(.bottom, tilt.sideways ? 16 : 62)
+        .padding(.bottom, 16)
         .animation(.timingCurve(0.2, 0.8, 0.2, 1, duration: 0.32), value: app.coach.heard == nil)
-        .animation(.spring(response: 0.4, dampingFraction: 0.86), value: showReview)
-        .animation(.spring(response: 0.4, dampingFraction: 0.86), value: review.cards)
-    }
-}
-
-/// The review as badges: `● ALMOST`, then one chip per suggestion (the first at `suggestion`,
-/// the rest at `final`).
-private struct ReviewChips: View {
-    let review: InstantReview
-
-    var body: some View {
-        let accent = Self.color(review.verdict)
-        let cards = review.isFinal ? Array(review.cards.prefix(3)) : Array(review.cards.prefix(1))
-        VStack(spacing: 6) {
-            Text("● " + (review.verdict?.rawValue.uppercased() ?? ""))
-                .font(GXFont.mono(10))
-                .tracking(10 * 0.1)
-                .foregroundStyle(accent)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .glassPill(cornerRadius: 12, tint: accent)
-            ForEach(Array(cards.enumerated()), id: \.offset) { i, c in
-                HStack(spacing: 7) {
-                    Image(systemName: Self.icon(c))
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(i == 0 ? GXColor.geminiHot : GXColor.frost.opacity(0.6))
-                    Text(c.action)
-                        .font(GXFont.display(14))
-                        .foregroundStyle(GXColor.frost.opacity(i == 0 ? 1 : 0.78))
-                        .lineLimit(1)
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .glassPill(cornerRadius: 16)
-                .transition(.opacity.combined(with: .offset(y: 4)))
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityHint("Dismiss")
-    }
-
-    static func color(_ v: ReviewVerdict?) -> Color {
-        switch v {
-        case .keeper: return Color(red: 0x8C / 255, green: 0xF5 / 255, blue: 0xD2 / 255)
-        case .almost: return Color(red: 1, green: 0xC2 / 255, blue: 0x7A / 255)
-        case .retake: return GXColor.signal
-        case nil: return GXColor.label
-        }
-    }
-
-    static func icon(_ c: ReviewCard) -> String {
-        switch c.guide {
-        case .left?: return "arrow.left"
-        case .right?: return "arrow.right"
-        case .up?: return "arrow.up"
-        case .down?: return "arrow.down"
-        case .closer?: return "plus.magnifyingglass"
-        case .back?: return "minus.magnifyingglass"
-        case .rotateLeft?: return "arrow.counterclockwise"
-        case .rotateRight?: return "arrow.clockwise"
-        case .hold?, nil: break
-        }
-        switch c.kind {
-        case "light": return "sun.max"
-        case "timing": return "timer"
-        case "setting": return "slider.horizontal.3"
-        case "subject": return "person.crop.circle"
-        case "angle": return "camera.rotate"
-        default: return "viewfinder"
-        }
     }
 }
 

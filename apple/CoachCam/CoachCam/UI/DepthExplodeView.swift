@@ -7,11 +7,11 @@ import SceneKit
 import SwiftUI
 import UIKit
 
-// A rough 3D "exploded" view of a shot: Core's depth.png (16-bit mm) turned into a SceneKit point
+// A rough 3D "exploded" view of a shot: a depth PNG (16-bit mm, from the photo file) turned into a SceneKit point
 // cloud coloured from the photo, cut into depth slabs that drift apart along z on appear.
 // Drag to orbit, pinch to zoom, tap to collapse or explode again.
 
-/// The photo plus Core's `depth.png` (16-bit grayscale millimetres, 0 = unknown, same aspect).
+/// The photo plus its `depth.png` (16-bit grayscale millimetres, 0 = unknown, same aspect).
 struct DepthExplodeView: View {
     private let photo: CGImage
     private let depthPNG: Data
@@ -48,96 +48,6 @@ struct DepthExplodeView: View {
     }
 }
 
-// MARK: - Loading from Core
-
-extension DepthExplodeView {
-    struct LoadError: LocalizedError {
-        let message: String
-        var errorDescription: String? { message }
-    }
-
-    /// Fetches `image.jpg` and `depth.png` for a shot, waiting up to `wait` seconds for the depth
-    /// stage if it is still running. Uses CoachClient's authenticated asset requests.
-    static func fetch(client: CoachClient, shot: Shot, wait: TimeInterval = 20) async throws -> (photo: CGImage, depthPNG: Data) {
-        var shot = shot
-        let deadline = Date().addingTimeInterval(wait)
-        while !shot.assets.depth.isReady {
-            if shot.assets.depth.status == .error {
-                throw LoadError(message: "depth failed for \(shot.id): \(shot.assets.depth.error ?? "unknown error")")
-            }
-            guard Date() < deadline else { throw LoadError(message: "depth not ready for \(shot.id) after \(Int(wait)) s") }
-            try await Task.sleep(for: .seconds(1))
-            shot = try await client.shot(id: shot.id)
-        }
-        let base = "/api/shots/" + (shot.id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(["/"])) ?? shot.id)
-        let imagePath = shot.assets.image.url ?? base + "/image.jpg"
-        let depthPath = shot.assets.depth.url ?? base + "/depth.png"
-        async let imageData = client.assetData(imagePath)
-        async let depthData = client.assetData(depthPath)
-        let (jpeg, png) = try await (imageData, depthData)
-        guard let photo = uprightImage(jpeg, maxPixel: 1024) else {
-            throw LoadError(message: "image.jpg for \(shot.id) did not decode (\(jpeg.count) bytes)")
-        }
-        return (photo, png)
-    }
-
-    /// Decodes with EXIF orientation applied, capped at `maxPixel` on the long side.
-    static func uprightImage(_ data: Data, maxPixel: Int) -> CGImage? {
-        guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
-        let opts: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                                     kCGImageSourceCreateThumbnailWithTransform: true,
-                                     kCGImageSourceThumbnailMaxPixelSize: maxPixel]
-        return CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary)
-    }
-}
-
-/// Loads a shot's photo and depth from Core, then shows the exploded cloud.
-struct DepthExplodeShotView: View {
-    let client: CoachClient
-    let shot: Shot
-    @State private var loaded: Loaded?
-    @State private var error: String?
-    @Environment(\.dismiss) private var dismiss
-
-    private struct Loaded { let photo: CGImage; let depthPNG: Data }
-
-    init(client: CoachClient, shot: Shot) {
-        self.client = client
-        self.shot = shot
-    }
-
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            if let loaded {
-                DepthExplodeView(photo: loaded.photo, depthPNG: loaded.depthPNG)
-            } else if let error {
-                Text(error).font(CoachFont.label).foregroundStyle(GXColor.label)
-                    .multilineTextAlignment(.center).padding(24)
-            } else {
-                ProgressView().tint(GXColor.label)
-            }
-        }
-        .overlay(alignment: .topTrailing) {
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(GXColor.label)
-                    .frame(width: 44, height: 44)
-            }
-            .padding(.trailing, 6)
-        }
-        .task(id: shot.id) {
-            do {
-                let r = try await DepthExplodeView.fetch(client: client, shot: shot)
-                loaded = Loaded(photo: r.photo, depthPNG: r.depthPNG)
-            } catch is CancellationError {
-            } catch {
-                self.error = error.localizedDescription
-            }
-        }
-    }
-}
 
 // MARK: - SceneKit view
 
@@ -234,7 +144,7 @@ enum DepthExplodePreview {
         var url = URL(fileURLWithPath: #filePath)
         for _ in 0..<5 { url.deleteLastPathComponent() }
         url.append(path: "server/checks/fixtures/coach/can_far_messy_table.jpg")
-        if let data = try? Data(contentsOf: url), let img = DepthExplodeView.uprightImage(data, maxPixel: 1024) {
+        if let data = try? Data(contentsOf: url), let img = UIImage(data: data)?.cgImage {
             return img
         }
         let ctx = CGContext(data: nil, width: 192, height: 256, bitsPerComponent: 8, bytesPerRow: 0,
@@ -306,7 +216,7 @@ enum DepthCloud {
         var colors: [Float] = []
     }
 
-    /// Decodes Core's 16-bit grayscale `depth.png`. Reads the raw samples when the layout allows
+    /// Decodes a 16-bit grayscale `depth.png`. Reads the raw samples when the layout allows
     /// (no colour management), otherwise redraws into a 16-bit gray context.
     static func decode(_ png: Data) -> Depth? {
         guard let src = CGImageSourceCreateWithData(png as CFData, nil),
