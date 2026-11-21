@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Story demo: thesis and agent trace</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,400..700&display=swap"
+      rel="stylesheet"
+    />
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans+Code:wght@400;500&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="../style.css" />
+    <style>
+      body { background: #05060b; }
+      .pad {
+        height: 70vh;
+        display: grid;
+        place-items: center;
+        color: rgba(238, 243, 255, 0.45);
+        font-size: 13px;
+      }
+      .demo-coach { padding-block: var(--section-pad); }
+      .phone-ph {
+        width: min(300px, 72vw);
+        aspect-ratio: 393 / 852;
+        border-radius: 46px;
+        background: linear-gradient(180deg, #1c1f27, #13151b);
+        border: 1px solid rgba(238, 243, 255, 0.08);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="pad">The hero</div>
+    <section id="thesis"></section>
+    <section id="coach" class="demo-coach">
+      <div class="container grid media-left">
+        <div class="col-media"><div class="phone-ph"></div></div>
+        <div class="col-text copy">
+          <p class="eyebrow" id="coach-label"></p>
+          <h2 class="h2" id="coach-title"></h2>
+          <p class="lede" id="coach-lede"></p>
+          <div id="trace"></div>
+        </div>
+      </div>
+    </section>
+    <div class="pad">The footer</div>
+    <script type="module">
+      import { CHAPTERS } from '../config.js';
+      import { mountThesis } from './thesis.js';
+      import { AgentTrace } from './trace.js';
+
+      const coach = CHAPTERS.find((c) => c.id === 'coach');
+      document.getElementById('coach-label').textContent = coach.label;
+      document.getElementById('coach-title').textContent = coach.title;
+      document.getElementById('coach-lede').textContent = coach.lede;
+
+      window.__thesis = mountThesis(document.getElementById('thesis'));
+      const trace = (window.__trace = new AgentTrace(document.getElementById('trace'), coach));
+
+      // A looping clock while the section is on screen, like the page's ScenePlayer.
+      // ?t=1.0 runs the clock to 1.0 s, then freezes it and every animation (for screenshots).
+      const stopAt = new URLSearchParams(location.search).get('t');
+      let t0 = 0;
+      let raf = 0;
+      const tick = (now) => {
+        let t = (now - t0) / 1000;
+        if (stopAt != null && t >= +stopAt) {
+          trace.render(+stopAt);
+          raf = 0;
+          requestAnimationFrame(() => document.getAnimations().forEach((a) => a.pause()));
+          return;
+        }
+        if (t >= coach.loop) {
+          trace.reset();
+          t0 = now;
+          t = 0;
+        }
+        trace.render(t);
+        raf = requestAnimationFrame(tick);
+      };
+      new IntersectionObserver(
+        ([e]) => {
+          if (e.isIntersecting && !raf) {
+            trace.reset();
+            t0 = performance.now();
+            raf = requestAnimationFrame(tick);
+          } else if (!e.isIntersecting) {
+            cancelAnimationFrame(raf);
+            raf = 0;
+            trace.reset();
+          }
+        },
+        { threshold: 0.2 },
+      ).observe(document.getElementById('coach'));
+    </script>
+  </body>
+</html>
