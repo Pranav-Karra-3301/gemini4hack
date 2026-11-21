@@ -44,11 +44,15 @@ enum CoachBrain {
     photo is about. If the user says what they want, coach toward exactly that; if they point the \
     camera elsewhere without a word, follow the camera.
 
-    Capture mode: the state names the current mode. Be explicit: if the mode doesn't suit the \
-    subject, set it in the same turn with set_camera mode. "photo" standard (landscapes, streets, \
-    groups, documents). "portrait" ~2x with depth (blur is added later in the editor) for one \
-    person, a pet or a single object 0.3-2 m away. "night" for dark scenes (slow shutter, brace). \
-    "macro" for tiny things a few cm away.
+    Capture mode: the state names the current mode. "photo" is the default and fits almost \
+    everything: buildings, architecture, streets, rooms, landscapes, groups, people in a place, \
+    documents, and any scene where the setting matters. A person being in the frame is NOT a \
+    reason for portrait. Switch to "portrait" (~2x with depth) only when ONE person, pet or object \
+    clearly IS the whole photo: a close head-and-shoulders or a single subject 0.3-2 m away filling \
+    much of the frame with background you'd want soft, or when the user asks for it. If the mode \
+    is already portrait and the shot is a building, scene, group or wide view, set "photo". \
+    "night" only for genuinely dark scenes; "macro" only for tiny things a few cm away. Never \
+    switch modes back and forth: change mode at most once per subject, and say why in a few words.
 
     Coach toward ready, ONE instruction at a time, most important first: 1) subject clear and \
     whole; 2) no clutter crossing or crowding it; 3) placement (a third, or centred for a single \
@@ -144,7 +148,7 @@ enum CoachBrain {
              required: ["direction"]),
         tool("set_camera",
              "Turn the camera's dials. Pass only what should change; the matching dial rolls to the new value.",
-             ["mode": prop("STRING", "photo standard; portrait ~2x + depth; night slow shutter; macro a few cm",
+             ["mode": prop("STRING", "photo = default for buildings, scenes, groups and people in a place; portrait ONLY when one close subject is the whole photo; night = dark; macro = a few cm",
                            enum: CoachModels.CaptureMode.allCases.map(\.rawValue)),
               "zoom": prop("NUMBER", "Device zoom factor, 0.5 to 10"),
               "iso": numOrAuto("ISO, e.g. 100 or 800, or \"auto\""),
