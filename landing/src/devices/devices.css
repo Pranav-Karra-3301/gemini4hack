@@ -1,0 +1,105 @@
+/*
+ * Device frames: Apple's bezel PNGs over a screen clipped to the measured screen rect.
+ * The screen sits underneath the frame; the PNG's transparent screen area shows it.
+ */
+
+.dv {
+  position: relative;
+  width: 100%;
+  isolation: isolate;
+  user-select: none;
+}
+
+/* Soft contact shadow, feathered so it never reads as a box. */
+.dv::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: 8%;
+  right: 8%;
+  bottom: -3%;
+  height: 10%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.6), transparent);
+  filter: blur(12px);
+  pointer-events: none;
+}
+
+.dv__screen {
+  position: absolute;
+  z-index: 1;
+  overflow: hidden;
+  isolation: isolate;
+  background: #000;
+  /* Forces the clip onto the WebGL layer in Safari. */
+  transform: translateZ(0);
+}
+
+.dv__frame {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+}
+
+.dv--macbook::before {
+  left: 2%;
+  right: 2%;
+  bottom: -4%;
+  height: 12%;
+}
+
+/* ---------------------------------------------------------------- MacBook (CSS frame) */
+/* Device units: root 1716x1106, lid 1560x1049, screen 1512x982. Positions are set inline as %. */
+
+.dv--macbook::before { display: none; }
+
+.dv-macbook__lid {
+  position: absolute;
+  top: 0;
+  border-radius: 2.564% 2.564% 0.385% 0.385% / 3.813% 3.813% 0.572% 0.572%;
+  background: linear-gradient(180deg, #2e2f33 0%, #212226 55%, #1a1b1e 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* Black glass inside a 3-unit aluminium rim. */
+.dv-macbook__bezel {
+  position: absolute;
+  inset: 0.286% 0.192% 0 0.192%;
+  border-radius: 2.381% 2.381% 0.3% 0.3% / 3.537% 3.537% 0.45% 0.45%;
+  background: linear-gradient(180deg, #08080a, #050506);
+}
+
+.dv-macbook__screen { z-index: 1; }
+
+.dv-macbook__notch {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  height: auto;
+  transform: translateX(-50%);
+  display: block;
+}
+
+.dv-macbook__base {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: auto;
+  display: block;
+  z-index: 3;
+}
+
+.dv-macbook__shadow {
+  position: absolute;
+  z-index: -1;
+  left: 3%;
+  right: 3%;
+  bottom: -3.5%;
+  height: 8%;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.65), transparent);
+  filter: blur(14px);
+}

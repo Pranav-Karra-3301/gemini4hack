@@ -1,0 +1,44 @@
+{
+  "regions": [
+    {
+      "id": "r1",
+      "box": {
+        "x": 0.353,
+        "y": 0.393,
+        "w": 0.255,
+        "h": 0.157
+      },
+      "tag": "focus",
+      "note": "Turn subjects slightly toward the sun to remove split-light shadows on faces."
+    },
+    {
+      "id": "r2",
+      "box": {
+        "x": 0.323,
+        "y": 0.923,
+        "w": 0.3,
+        "h": 0.077
+      },
+      "tag": "remove",
+      "note": "Step back or tilt down to avoid cutting through their feet."
+    },
+    {
+      "id": "r3",
+      "box": {
+        "x": 0.0,
+        "y": 0.623,
+        "w": 0.344,
+        "h": 0.293
+      },
+      "tag": "remove",
+      "note": "Crop in from the left; the long empty fence pulls the eye away."
+    }
+  ],
+  "model": "google/gemini-4-argon",
+  "ms": 10351,
+  "labels": [
+    "three men's faces",
+    "clipped shoes at bottom",
+    "wooden fence at left"
+  ]
+}

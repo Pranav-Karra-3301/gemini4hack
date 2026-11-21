@@ -1,0 +1,378 @@
+/* =====================================================================
+   Showcase: "Sees in depth" -> "Edits with you" (real data).
+   One sticky, full-viewport stage: edge to edge, no frame. Captions sit
+   on the left over a soft dark gradient. Tokens follow landing/DESIGN_TYPE.md
+   (palette v2: monochrome + Gemini blue for AI marks only). Every token has
+   a fallback so the module also works on a page that does not load style.css.
+   ===================================================================== */
+
+.sc {
+  --sc-ink: var(--ink, #070910);
+  --sc-surface: #0d1016;
+  --sc-text: var(--text, #eef3ff);
+  --sc-muted: var(--muted, rgba(238, 243, 255, 0.68));
+  --sc-faint: var(--faint, rgba(238, 243, 255, 0.45));
+  --sc-eyebrow: rgba(238, 243, 255, 0.55);
+  --sc-blue: #4c8dff;
+  --sc-blue-rgb: 76, 141, 255;
+  --sc-ease: var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  --sc-container: var(--container, 1280px);
+  --sc-pad: var(--container-pad, clamp(20px, 5vw, 64px));
+
+  position: relative;
+  color: var(--sc-text);
+  font-family: var(--font, 'Google Sans Flex', system-ui, sans-serif);
+}
+
+.sc-track {
+  position: relative;
+  height: 500vh;
+}
+
+.sc-sticky {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100svh;
+  overflow: hidden;
+  background: #000;
+  isolation: isolate;
+}
+
+/* soften the stage's top and bottom into the page ink */
+.sc-sticky::before,
+.sc-sticky::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  height: 9vh;
+  pointer-events: none;
+}
+.sc-sticky::before { top: 0; background: linear-gradient(var(--sc-ink), rgba(7, 9, 16, 0)); }
+.sc-sticky::after { bottom: 0; background: linear-gradient(rgba(7, 9, 16, 0), var(--sc-ink)); }
+
+/* ---------------- media: two full-bleed canvases ---------------- */
+
+.sc-media {
+  position: absolute;
+  inset: 0;
+  touch-action: pan-y;
+}
+.sc.has-3d .sc-media { cursor: grab; }
+.sc.is-dragging .sc-media { cursor: grabbing; }
+
+.sc-canvas,
+.sc-fallback {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.sc-canvas--2d {
+  opacity: 0;
+  transition: opacity 600ms var(--sc-ease);
+}
+.sc.is-ready .sc-canvas--2d { opacity: 1; }
+.sc-canvas--3d { opacity: 0; pointer-events: none; }
+
+.sc-fallback { overflow: hidden; }
+.sc-fallback img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: opacity 500ms var(--sc-ease);
+}
+
+/* the photo's edges feather into black (fades out as the 3D view pulls back) */
+.sc-feather {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, #000 0, rgba(0, 0, 0, 0) 9%, rgba(0, 0, 0, 0) 91%, #000 100%),
+    linear-gradient(180deg, #000 0, rgba(0, 0, 0, 0) 13%, rgba(0, 0, 0, 0) 87%, #000 100%);
+}
+
+/* the caption's soft dark gradient */
+.sc-shade {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(0, 0, 0, 0.74) 0, rgba(0, 0, 0, 0.5) 24%, rgba(0, 0, 0, 0.16) 44%, rgba(0, 0, 0, 0) 60%),
+    linear-gradient(0deg, rgba(0, 0, 0, 0.55) 0, rgba(0, 0, 0, 0) 22%);
+}
+
+/* ---------------- captions (left) ---------------- */
+
+.sc-copy {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: max(var(--sc-pad), calc((100vw - var(--sc-container)) / 2 + var(--sc-pad)));
+  width: min(440px, 40vw);
+  transform: translateY(-50%);
+  text-shadow: 0 1px 24px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.sc-eyebrow {
+  margin: 0;
+  font-size: var(--t-eyebrow, 13px);
+  font-weight: var(--t-eyebrow-w, 600);
+  letter-spacing: var(--t-eyebrow-tr, 0.12em);
+  line-height: var(--t-eyebrow-lh, 1);
+  text-transform: uppercase;
+  color: var(--sc-eyebrow);
+}
+
+.sc-swap,
+.sc-steps {
+  display: grid;
+}
+.sc-swap > *,
+.sc-step {
+  grid-area: 1 / 1;
+  transition: opacity 420ms var(--sc-ease), transform 420ms var(--sc-ease);
+}
+.sc-swap > [aria-hidden='true'],
+.sc-step[aria-hidden='true'] {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.sc-h2 {
+  margin: var(--r-eyebrow-h2, 16px) 0 0;
+  font-size: var(--t-h2, clamp(40px, 4.6vw, 68px));
+  font-weight: var(--t-h2-w, 650);
+  letter-spacing: var(--t-h2-tr, -0.03em);
+  line-height: var(--t-h2-lh, 1.02);
+  text-wrap: balance;
+}
+
+.sc-ticks {
+  display: flex;
+  gap: 6px;
+  margin: 40px 0 20px;
+}
+.sc-ticks i {
+  width: 22px;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(238, 243, 255, 0.22);
+  transition: background-color 240ms ease-out;
+}
+.sc-ticks i.is-on { background: var(--sc-text); }
+
+.sc-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sc-step .sc-eyebrow { display: block; }
+
+.sc-h3 {
+  margin: 12px 0 0;
+  font-size: var(--t-h3, clamp(22px, 1.9vw, 28px));
+  font-weight: var(--t-h3-w, 600);
+  letter-spacing: var(--t-h3-tr, -0.015em);
+  line-height: var(--t-h3-lh, 1.2);
+}
+
+.sc-line {
+  margin: 8px 0 0;
+  max-width: 34ch;
+  font-size: var(--t-step, 17px);
+  font-weight: 400;
+  letter-spacing: var(--t-step-tr, -0.005em);
+  line-height: var(--t-step-lh, 1.4);
+  color: var(--sc-muted);
+}
+
+/* ---------------- bottom bar: meta / legend / hint / pills ---------------- */
+
+.sc-bar {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  bottom: max(28px, 5vh);
+  width: min(100% - 2 * var(--sc-pad), 760px);
+  height: 40px;
+  transform: translateX(-50%);
+}
+.sc-bar > * {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 360ms var(--sc-ease), transform 360ms var(--sc-ease);
+  pointer-events: none;
+}
+.sc-bar > .is-on { opacity: 1; transform: none; }
+.sc-bar > .sc-pills.is-on { pointer-events: auto; }
+
+.sc-meta,
+.sc-legend,
+.sc-hint {
+  font-size: var(--t-small, 13px);
+  line-height: 1;
+  color: var(--sc-faint);
+  font-variant-numeric: tabular-nums;
+}
+.sc-meta b,
+.sc-legend b,
+.sc-hint b { font-weight: 600; color: var(--sc-muted); }
+
+.sc-legend-bar {
+  position: relative;
+  width: 140px;
+  height: 4px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #eef3ff, #6d7280 55%, #0a0c12);
+  box-shadow: inset 0 0 0 1px rgba(238, 243, 255, 0.08);
+}
+.sc-legend-tick {
+  position: absolute;
+  top: -5px;
+  left: 0;
+  width: 2px;
+  height: 14px;
+  margin-left: -1px;
+  border-radius: 2px;
+  background: var(--sc-blue);
+  box-shadow: 0 0 8px rgba(var(--sc-blue-rgb), 0.9);
+  transition: opacity 200ms linear;
+}
+
+.sc-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: rgba(13, 16, 22, 0.72);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: inset 0 0 0 1px rgba(238, 243, 255, 0.1);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--sc-muted);
+  white-space: nowrap;
+  transition: box-shadow 280ms var(--sc-ease), color 280ms var(--sc-ease), background-color 200ms var(--sc-ease);
+}
+.sc-pill output {
+  min-width: 3.2ch;
+  font-weight: 600;
+  color: var(--sc-text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.sc-pill-track {
+  position: relative;
+  width: 44px;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(238, 243, 255, 0.14);
+}
+.sc-pill-track::after {
+  /* centre mark: faders are bipolar */
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  width: 1px;
+  height: 6px;
+  background: rgba(238, 243, 255, 0.25);
+}
+.sc-pill-knob {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: var(--sc-text);
+  transition: background-color 280ms var(--sc-ease), box-shadow 280ms var(--sc-ease);
+}
+.sc-pill.is-moving {
+  color: var(--sc-text);
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--sc-blue-rgb), 0.75),
+    0 0 22px -2px rgba(var(--sc-blue-rgb), 0.45);
+}
+.sc-pill.is-moving .sc-pill-knob {
+  background: var(--sc-blue);
+  box-shadow: 0 0 10px rgba(var(--sc-blue-rgb), 0.9);
+}
+
+.sc-compare {
+  justify-content: center;
+  min-width: 148px;
+  margin-left: 6px;
+  border: 0;
+  cursor: pointer;
+  color: var(--sc-text);
+  font-weight: 600;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: none;
+}
+.sc-compare:hover { background: rgba(28, 32, 42, 0.82); }
+.sc-compare.is-held {
+  background: rgba(238, 243, 255, 0.94);
+  color: #0d1016;
+}
+.sc-compare:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px rgba(238, 243, 255, 0.1), 0 0 0 3px rgba(var(--sc-blue-rgb), 0.55);
+}
+
+/* ---------------- small screens ---------------- */
+
+@media (max-width: 767px) {
+  .sc-shade {
+    background: linear-gradient(0deg, rgba(0, 0, 0, 0.82) 0, rgba(0, 0, 0, 0.55) 34%, rgba(0, 0, 0, 0) 60%);
+  }
+  .sc-copy {
+    top: auto;
+    bottom: calc(max(28px, 5vh) + 96px);
+    left: var(--sc-pad);
+    right: var(--sc-pad);
+    width: auto;
+    transform: none;
+  }
+  .sc-h2 { font-size: clamp(32px, 9vw, 40px); }
+  .sc-ticks { margin: 20px 0 14px; }
+  .sc-bar { height: 76px; }
+  .sc-bar > * { flex-wrap: wrap; align-content: flex-end; gap: 8px; }
+  .sc-pill { height: 32px; padding: 0 11px; }
+  .sc-pill-track { display: none; }
+  .sc-compare { margin-left: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-swap > *,
+  .sc-step,
+  .sc-bar > *,
+  .sc-canvas,
+  .sc-pill,
+  .sc-pill-knob { transition-duration: 1ms; }
+  .sc-swap > [aria-hidden='true'],
+  .sc-step[aria-hidden='true'],
+  .sc-bar > * { transform: none; }
+}

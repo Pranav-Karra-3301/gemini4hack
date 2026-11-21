@@ -38,3 +38,6 @@ xcuserdata/
 
 # OS
 .DS_Store
+
+# landing splats are copied in from server/library per photo (~14 MB each)
+landing/public/splats/*.spz
