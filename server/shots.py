@@ -379,10 +379,11 @@ def _box_depths(sid: str, regs: dict) -> dict[str, float]:
     return out
 
 
-def _notes(sid: str) -> tuple[str, list[str], str | None]:
+def _notes(sid: str, box_depths: bool = False) -> tuple[str, list[str], str | None]:
     """Shot notes for Gemini, the region ids, and the default subject (first focus region that
-    got a usable mask, else the first focus region). Before masks are done, region depths come
-    from their boxes."""
+    got a usable mask, else the first focus region). With `box_depths` (the pipeline's suggest,
+    which runs alongside masks) region depths come from their boxes until masks are done; that
+    reads depth.png, so call it off the event loop."""
     rec = _records[sid]
     score = _read_json(sid, "score.json") if _status(rec, "score") == "done" else None
     regs = _read_json(sid, "regions.json") if _status(rec, "regions") == "done" else None
@@ -391,7 +392,7 @@ def _notes(sid: str) -> tuple[str, list[str], str | None]:
     mmeta = (rec["assets"].get("masks") or {}).get("meta") or {}
     masked = [rid for rid in focus if (mmeta.get(rid) or {}).get("area", 0) and mmeta[rid]["area"] > 0.005]
     subject = (masked or focus or [None])[0]
-    box_depth = (_box_depths(sid, regs) if regs and _status(rec, "masks") != "done"
+    box_depth = (_box_depths(sid, regs) if box_depths and regs and _status(rec, "masks") != "done"
                  and _status(rec, "depth") == "done" else None)
     return edit.shot_context(rec, score, regs, box_depth), ids, subject
 
@@ -409,7 +410,7 @@ def get_record(shot_id: str) -> dict | None:
 
 
 async def _do_suggest(sid: str, data: bytes) -> dict:
-    notes, ids, subject = _notes(sid)
+    notes, ids, subject = await asyncio.to_thread(_notes, sid, True)
     res = await edit.suggest(data, notes, None, None, ids, subject)
     await asyncio.to_thread(_write_json, sid, "suggest.json", res)
     return {"url": _url(sid, "suggest.json"), "summary": res.get("summary")}

@@ -105,8 +105,9 @@ unless the photo is badly exposed. Go further only when the user's goal asks for
 light, a subject that does not stand out). Leave alone what already works.
 5. "why": one line, at most 12 words, about this photo, e.g. "Pull back the blown window so \
 her face leads" rather than "Adjust highlights".
-6. "subject": the id of the main subject region (a focus region with a mask) or null if the \
-notes list none. subject_light, background_light and depth_blur need a subject.
+6. "subject": the id of the main subject region (a focus region, preferring one with a mask when \
+the notes list masks) or null if the notes list no focus region. subject_light, background_light \
+and depth_blur need a subject.
 7. "region": for subject_light and background_light the subject id; for a step aimed at one \
 listed region, that id; otherwise null. Only use ids from the notes.
 8. depth_blur only when the depth notes show the background well behind the subject (about \
