@@ -84,7 +84,7 @@ The four flows, in order of use:
 2. **Sync and process (iPhone → Core → local models and Gemini).** `take_photo` writes the shot to
    disk, then `POST /api/shots` uploads it with the capture settings and coach lines. Core stores
    `original.jpg`, makes `image.jpg` (1536 px, upright) and `thumb.jpg`, answers 201 in ~0.1 s, and
-   runs the pipeline in the background, newest shot first: **depth ∥ score ∥ regions → masks →
+   runs the pipeline in the background, newest shot first: **depth ∥ score ∥ regions → masks ∥
    suggest**. GPU stages (Depth Pro, SAM, SHARP) share one lock. Every status change is persisted
    to `shot.json` and broadcast.
 3. **Library sync (Core → Mac app, SSE).** CoachStudio holds `GET /api/events` open. Each `event:
@@ -182,7 +182,7 @@ between runs.
 | Regions (Argon) | 9.5 s p50, 6–25 s spread | ≈ $0.006 (doubles 2026-12-01) |
 | Masks (SAM) | 1.6 s warm, 3.8 s cold, 13.5 s on first model load | local |
 | Suggest (Hydrogen) | 4.7–9.2 s; saved plan 3–6 ms; with a goal 6.3–7.0 s | in the E2E total below |
-| All stages done after upload | 21–23 s (SAM loaded), 32 s fully cold | E2E run: 9 calls, $0.025 total |
+| All stages done after upload | 21–23 s (SAM loaded), 32 s fully cold; suggest no longer waits for masks (#8), which saves the SAM time, 2.5–3 s warm | E2E run: 9 calls, $0.025 total |
 | SHARP splat (on request) | 7–12 s, ~9 GB, one at a time | local |
 | `PUT edit` / health | 3 ms / 3 ms | – |
 | **Editing (CoachEdit, 1280 px, all sliders)** | | |
@@ -305,7 +305,6 @@ Main env knobs: `COACH_PORT`, `COACH_LAN`, `COACH_TOKEN`, `COACH_LAN_HOST`, `COA
   CoachLive ignores `usageMetadata`.
 - Check-ins every 4 s dominate Live cost; the web live client has no frame change gate and ticks
   regardless.
-- Suggest waits on masks; starting it after regions would save ~4 s.
 - `/api/cam/understand` could move to Flash-Lite (1.1 s vs 4 s, ~8× cheaper) once checked on
   real voice clips.
 - Argon (regions) doubles in price on 2026-12-01.

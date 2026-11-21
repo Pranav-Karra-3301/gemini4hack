@@ -10,7 +10,8 @@ Pipeline: one asyncio worker, newest shot first, re-picking the newest shot afte
   A. depth (GPU) ∥ score ∥ regions   score and regions are network-bound and don't need depth,
                                      so they overlap Depth Pro instead of waiting for it
   B. masks (GPU; needs regions; reuses depth.py's LRU depth map for the same image bytes)
-  C. suggest (Gemini edit plan, edit.py)
+     ∥ suggest (Gemini edit plan, edit.py; needs regions, not masks: region depths come from
+     their boxes in depth.png, and the default subject is the first focus region)
 Every stage goes pending -> running -> done | error and each transition is persisted and
 broadcast on /api/events. GPU models (Depth Pro, SAM, SHARP) run in threads/subprocesses under
 one lock, so at most one runs at a time. On startup unfinished stages are re-queued; an
@@ -63,7 +64,7 @@ MAX_META = 16 * 1024
 PING_S = 15.0
 SUB_QUEUE = 512
 STAGES = ("depth", "score", "regions", "masks", "suggest")
-PHASES = (("depth", "score", "regions"), ("masks",), ("suggest",))
+PHASES = (("depth", "score", "regions"), ("masks", "suggest"))
 FILES = {  # servable asset files -> media type
     "image.jpg": "image/jpeg", "original.jpg": "image/jpeg", "thumb.jpg": "image/jpeg",
     "depth.png": "image/png", "regions.json": "application/json", "score.json": "application/json",
@@ -355,9 +356,34 @@ async def _do_masks(sid: str, data: bytes) -> dict:
     return {**out, "model": res.get("model")}
 
 
-def _notes(sid: str) -> tuple[str, list[str], str | None]:
+def _box_depths(sid: str, regs: dict) -> dict[str, float]:
+    """Median depth (m) inside each region's box, from depth.png: stands in for the masks'
+    depth_m when suggest runs before masks are done."""
+    try:
+        dm = np.asarray(Image.open(_dir(sid) / "depth.png"))
+    except OSError:
+        return {}
+    h, w = dm.shape
+    out = {}
+    for r in regs.get("regions") or []:
+        b = r.get("box") or {}
+        try:
+            x0, y0 = int(b["x"] * w), int(b["y"] * h)
+            x1, y1 = int((b["x"] + b["w"]) * w) + 1, int((b["y"] + b["h"]) * h) + 1
+        except (KeyError, TypeError):
+            continue
+        crop = dm[max(y0, 0):min(y1, h), max(x0, 0):min(x1, w)]
+        vals = crop[(crop > 0) & (crop < 65535)]
+        if r.get("id") and vals.size:
+            out[r["id"]] = round(float(np.median(vals)) / 1000.0, 3)
+    return out
+
+
+def _notes(sid: str, box_depths: bool = False) -> tuple[str, list[str], str | None]:
     """Shot notes for Gemini, the region ids, and the default subject (first focus region that
-    got a usable mask, else the first focus region)."""
+    got a usable mask, else the first focus region). With `box_depths` (the pipeline's suggest,
+    which runs alongside masks) region depths come from their boxes until masks are done; that
+    reads depth.png, so call it off the event loop."""
     rec = _records[sid]
     score = _read_json(sid, "score.json") if _status(rec, "score") == "done" else None
     regs = _read_json(sid, "regions.json") if _status(rec, "regions") == "done" else None
@@ -366,7 +392,9 @@ def _notes(sid: str) -> tuple[str, list[str], str | None]:
     mmeta = (rec["assets"].get("masks") or {}).get("meta") or {}
     masked = [rid for rid in focus if (mmeta.get(rid) or {}).get("area", 0) and mmeta[rid]["area"] > 0.005]
     subject = (masked or focus or [None])[0]
-    return edit.shot_context(rec, score, regs), ids, subject
+    box_depth = (_box_depths(sid, regs) if box_depths and regs and _status(rec, "masks") != "done"
+                 and _status(rec, "depth") == "done" else None)
+    return edit.shot_context(rec, score, regs, box_depth), ids, subject
 
 
 def shot_notes(shot_id: str) -> str | None:
@@ -382,7 +410,7 @@ def get_record(shot_id: str) -> dict | None:
 
 
 async def _do_suggest(sid: str, data: bytes) -> dict:
-    notes, ids, subject = _notes(sid)
+    notes, ids, subject = await asyncio.to_thread(_notes, sid, True)
     res = await edit.suggest(data, notes, None, None, ids, subject)
     await asyncio.to_thread(_write_json, sid, "suggest.json", res)
     return {"url": _url(sid, "suggest.json"), "summary": res.get("summary")}

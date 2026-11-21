@@ -105,8 +105,9 @@ unless the photo is badly exposed. Go further only when the user's goal asks for
 light, a subject that does not stand out). Leave alone what already works.
 5. "why": one line, at most 12 words, about this photo, e.g. "Pull back the blown window so \
 her face leads" rather than "Adjust highlights".
-6. "subject": the id of the main subject region (a focus region with a mask) or null if the \
-notes list none. subject_light, background_light and depth_blur need a subject.
+6. "subject": the id of the main subject region (a focus region, preferring one with a mask when \
+the notes list masks) or null if the notes list no focus region. subject_light, background_light \
+and depth_blur need a subject.
 7. "region": for subject_light and background_light the subject id; for a step aimed at one \
 listed region, that id; otherwise null. Only use ids from the notes.
 8. depth_blur only when the depth notes show the background well behind the subject (about \
@@ -205,8 +206,10 @@ def _shutter(s) -> str | None:
     return f"1/{round(1 / s)} s" if s < 0.5 else f"{s:g} s"
 
 
-def shot_context(rec: dict, score: dict | None, regions: dict | None) -> str:
-    """Compact notes about a shot from its record, score.json and regions.json."""
+def shot_context(rec: dict, score: dict | None, regions: dict | None,
+                 box_depth: dict | None = None) -> str:
+    """Compact notes about a shot from its record, score.json and regions.json. `box_depth`
+    (region id -> median depth in m inside its box) fills in for masks that aren't done yet."""
     lines = []
     w, h = rec.get("width"), rec.get("height")
     if w and h:
@@ -264,6 +267,8 @@ def shot_context(rec: dict, score: dict | None, regions: dict | None) -> str:
                 extra.append(f"mask {m['area'] * 100:.0f}% of frame")
             if isinstance(m.get("depth_m"), (int, float)):
                 extra.append(f"median depth {m['depth_m']:.1f} m")
+            elif isinstance((box_depth or {}).get(r.get("id")), (int, float)):
+                extra.append(f"median depth in box {box_depth[r['id']]:.1f} m")
             extra_s = (", " + ", ".join(extra)) if extra else ""
             lines.append(f"- {r.get('id')} [{r.get('tag')}] {box}{extra_s}: {str(r.get('note') or '')[:120]}")
     if dmeta.get("p02") is not None and dmeta.get("p98") is not None:
