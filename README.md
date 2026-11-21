@@ -65,6 +65,9 @@ flowchart LR
 
 ## Run it
 
+> **Heliocam must be installed on your own iPhone from your Mac.** It isn't on the App Store or
+> TestFlight: build it in Xcode and run it on your device with the steps below.
+
 You need a Mac with Xcode, [XcodeGen](https://github.com/yonaskolb/XcodeGen), [uv](https://docs.astral.sh/uv/)
 and an iPhone (a LiDAR model gets the depth fallback).
 
