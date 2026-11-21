@@ -759,6 +759,10 @@ async def api_director(frame: UploadFile = File(...), state: str | None = Form(N
         if not img:
             raise ValueError("empty frame")
         st = _parse_state(state)
+        # The phone sends its current subject/intent as `subject`/`intent`; the prompt calls them last_*.
+        for k in ("subject", "intent"):
+            if st.get(k) and not st.get("last_" + k):
+                st["last_" + k] = st[k]
         slim = {k: st[k] for k in DIRECTOR_STATE_KEYS if st.get(k) not in (None, "")}
         parts: list[dict] = [
             {"text": "Camera state: " + json.dumps(slim)[:1500]},
