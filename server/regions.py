@@ -17,6 +17,7 @@ import re
 import time
 
 import httpx
+import numpy as np
 
 import gemini
 
@@ -33,13 +34,16 @@ EFFORT = os.environ.get("REGIONS_EFFORT", "low")
 MAX_SIDE = 1024  # downscale before upload: boxes are normalized, so this only saves bytes/latency
 NOTE_MAX = 90
 
-PROMPT = """You are a photography lighting coach. Study this photo and pick exactly 3 regions to coach on.
+PROMPT = """You are a photo-editing coach. This photo is already taken: the user can't move the \
+camera, move or pose people, change the light or wait for the scene to change. They will edit it \
+in Coach, a Mac editor where the photo is a 3D scene: every pixel has a measured distance from the \
+camera, so edits can follow depth. Pick exactly 3 regions to coach on.
 
 Tag each region:
-- "focus": the subject, or the light worth building the shot around (a pool of window light, \
+- "focus": the subject, or the light worth building the edit around (a pool of window light, \
 rim light on hair, a lit face, a bright highlight that carries the image).
 - "remove": a distraction that pulls the eye away: a blown hot spot, a bright edge or corner, \
-clutter, an intruding object, a stray line. Something to crop out or clean up.
+clutter, an intruding object, a stray line. Something to crop out or tone down.
 Use at least one "focus" and at least one "remove".
 
 For each region return:
@@ -47,12 +51,23 @@ For each region return:
 - box_2d: [ymin, xmin, ymax, xmax] as integers 0-1000 relative to the full image, tightly \
 enclosing only that thing.
 - tag: "focus" or "remove".
-- note: ONE line, at most 12 words (under 90 characters): a specific action about light or \
-composition for that region, e.g. "Crop the bright sign at right; it outshines her face." No praise, no \
+- note: ONE line, at most 12 words (under 90 characters): one edit for that region that the \
+editor can make, e.g. "Crop the bright sign at right; it outshines her face." No praise, no \
 generic tips.
+
+The editor can: crop and straighten; exposure, contrast, highlights, shadows, whites, blacks; \
+warmth and tint; vibrance, saturation, clarity; brighten or darken the subject alone, or \
+everything but the subject; blur by depth (a lens blur that keeps one distance sharp); vignette. \
+It can't add, move or erase objects. Never tell the user to move, turn, pose, step, pan, tilt or \
+angle anything, to use a flash or reflector, to wait, or to reshoot.
 
 The 3 regions must be different things and should not overlap much. Avoid boxes that cover \
 most of the frame."""
+
+# depth.png stores millimetres in uint16, so everything past ~65 m reads as "far".
+FAR_M = 65.0
+DEPTH_HINT = ("Use the depth when it helps: blur by depth what sits well behind the subject, or \
+brighten or darken a whole near or far plane. Give a distance only in those depth edits.")
 
 SCHEMA = {
     "type": "object",
@@ -93,6 +108,41 @@ def _prepare(image_bytes: bytes, mime: str) -> tuple[str, str]:
         return gemini.b64(gemini.prepare_jpeg(image_bytes, MAX_SIDE)), "image/jpeg"
     except Exception:
         return base64.b64encode(image_bytes).decode(), mime or "image/jpeg"
+
+
+def _dist(m: float) -> str:
+    return "far" if m >= FAR_M else f"{m:.1f} m" if m < 10 else f"{m:.0f} m"
+
+
+def depth_notes(depth_m) -> str | None:
+    """Prompt text for a metric depth map (metres, top-left origin; inf or >= FAR_M is far, 0 or
+    NaN unknown): near/far range, the share that is far, and the median distance in each ninth
+    of the frame, so the model knows which parts of the photo are close and which are deep.
+    None when there's nothing usable."""
+    d = np.asarray(depth_m, dtype=np.float32)
+    if d.ndim != 2 or min(d.shape) < 3:
+        return None
+    far = np.isposinf(d) | (np.isfinite(d) & (d >= FAR_M))
+    near = np.isfinite(d) & (d > 0) & ~far
+    if not near.any():
+        return None
+    p02, p98 = np.percentile(d[near], [2, 98])
+    dist = np.where(far, np.inf, d)
+    known = far | near
+    h, w = d.shape
+    rows = []
+    for i, name in enumerate(("top", "middle", "bottom")):
+        cells = []
+        for j in range(3):
+            ys, xs = slice(i * h // 3, (i + 1) * h // 3), slice(j * w // 3, (j + 1) * w // 3)
+            vals = dist[ys, xs][known[ys, xs]]
+            cells.append(_dist(float(np.median(vals))) if vals.size else "unknown")
+        rows.append(f"{name}: " + " | ".join(cells))
+    share = float(far.sum()) / float(known.sum())
+    return (f"Depth from the camera (measured, metres): nearest {_dist(float(p02))}, farthest "
+            f"{_dist(float(p98))}; {share:.0%} of the frame is sky or beyond {FAR_M:.0f} m. "
+            "Median distance in each ninth of the frame (rows top to bottom, columns left to right):\n"
+            + "\n".join(rows) + "\n" + DEPTH_HINT)
 
 
 def _parse_json(text: str) -> dict:
@@ -151,7 +201,7 @@ def _normalize(data: dict) -> list[dict]:
     return out
 
 
-async def _ask(client: httpx.AsyncClient, key: str, b64: str, mime: str) -> tuple[list[dict], dict]:
+async def _ask(client: httpx.AsyncClient, key: str, b64: str, mime: str, prompt: str) -> tuple[list[dict], dict]:
     t0 = time.perf_counter()
     body = {
         "model": MODEL,
@@ -160,7 +210,7 @@ async def _ask(client: httpx.AsyncClient, key: str, b64: str, mime: str) -> tupl
                 "role": "user",
                 "content": [
                     {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
-                    {"type": "text", "text": PROMPT},
+                    {"type": "text", "text": prompt},
                 ],
             }
         ],
@@ -192,17 +242,19 @@ async def _ask(client: httpx.AsyncClient, key: str, b64: str, mime: str) -> tupl
     return _normalize(_parse_json(content)), usage
 
 
-async def _ask_gemini(_client, _key: str, b64: str, mime: str) -> tuple[list[dict], dict]:
+async def _ask_gemini(_client, _key: str, b64: str, mime: str, prompt: str) -> tuple[list[dict], dict]:
     """Same prompt and schema, straight to the Gemini API via gemini.py (pooled, retried, logged)."""
     reply = await gemini.generate(
-        GEMINI_MODEL, [gemini.image_part(b64, mime), PROMPT], schema=SCHEMA,
+        GEMINI_MODEL, [gemini.image_part(b64, mime), prompt], schema=SCHEMA,
         thinking=EFFORT or "low", media_resolution=MEDIA_RESOLUTION, tag="regions", timeout=TIMEOUT_S,
     )
     return _normalize(reply.data), {**(reply.raw.get("usageMetadata") or {}), "ms": reply.ms,
                                     "retries": reply.retries}
 
 
-async def find_regions(image_bytes: bytes, mime: str) -> dict:
+async def find_regions(image_bytes: bytes, mime: str, depth_m=None) -> dict:
+    """depth_m: optional metric depth map for this image (metres, any size); its summary goes
+    into the prompt (see depth_notes)."""
     gkey, okey = os.environ.get("GEMINI_API_KEY"), os.environ.get("OPENROUTER_API_KEY")
     if not (gkey or okey):
         raise RuntimeError("neither GEMINI_API_KEY nor OPENROUTER_API_KEY is set")
@@ -210,6 +262,8 @@ async def find_regions(image_bytes: bytes, mime: str) -> dict:
     routes = ([("gemini", gkey, _ask_gemini)] if gkey else []) + ([("openrouter", okey, _ask)] if okey else [])
     t0 = time.perf_counter()
     b64, send_mime = await asyncio.to_thread(_prepare, image_bytes, mime)  # off the event loop
+    notes = await asyncio.to_thread(depth_notes, depth_m) if depth_m is not None else None
+    prompt = f"{PROMPT}\n\n{notes}" if notes else PROMPT
     regions: list[dict] = []
     usages, last_exc, provider = [], None, routes[0][0]
     client: httpx.AsyncClient | None = None  # OpenRouter only; Gemini uses gemini.py's pool
@@ -221,7 +275,7 @@ async def find_regions(image_bytes: bytes, mime: str) -> dict:
             if provider == "openrouter" and client is None:
                 client = httpx.AsyncClient(timeout=TIMEOUT_S)
             try:
-                regions, usage = await ask(client, key, b64, send_mime)
+                regions, usage = await ask(client, key, b64, send_mime, prompt)
                 usages.append(usage)
             except (ValueError, KeyError, IndexError, TypeError, RuntimeError, httpx.HTTPError) as exc:
                 last_exc = exc
@@ -238,7 +292,7 @@ async def find_regions(image_bytes: bytes, mime: str) -> dict:
     last_debug.clear()
     last_debug.update(
         attempts=len(usages), usage=usages, labels=[r.pop("label") for r in regions], effort=EFFORT,
-        provider=provider, last_error=str(last_exc) if last_exc else None,
+        provider=provider, last_error=str(last_exc) if last_exc else None, depth_notes=notes,
     )
     return {
         "regions": [{"id": f"r{i}", **r} for i, r in enumerate(regions, 1)],
