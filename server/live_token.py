@@ -143,7 +143,8 @@ async def api_live_token(body: dict | None = Body(default=None)):
     over = live_budget.take()
     if over:
         log.warning("live token refused: %s", over["error"])
-        return JSONResponse(over, status_code=429, headers={"Retry-After": str(over["retry_after_s"])})
+        return JSONResponse({"error": over["error"]}, status_code=429,
+                            headers={"Retry-After": str(over["retry_after_s"])})
     try:
         tok = await mint(setup)
     except gemini.GeminiError as exc:  # HTTP or network failure that survived the retries

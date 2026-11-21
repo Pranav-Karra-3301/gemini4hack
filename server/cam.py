@@ -349,16 +349,21 @@ async def api_live(ws: WebSocket):
         await ws.send_text(json.dumps({"error": "GEMINI_API_KEY is not set on the server"}))
         await ws.close(code=1011)
         return
-    over = live_budget.take()
-    if over:
-        await ws.send_text(json.dumps(over))
-        await ws.close(code=1013, reason="live budget reached")
-        return
     q = ws.query_params
     voice = q.get("voice", "1") not in ("0", "false", "off")
     facing = "user" if q.get("facing") == "user" else "environment"
     handle = (q.get("resume") or "").strip() or None
-    await LiveBridge(ws, voice, facing, handle).run()
+    counted = handle is None  # a resume continues a session that already counted
+    if counted:
+        over = live_budget.take()
+        if over:
+            await ws.send_text(json.dumps({"error": over["error"]}))
+            await ws.close(code=1013, reason="live budget reached")
+            return
+    bridge = LiveBridge(ws, voice, facing, handle)
+    await bridge.run()
+    if counted and bridge.up is None:  # upstream never opened: no session was billed
+        live_budget.refund()
 
 
 # ---------------------------------------------------------------------------------------------

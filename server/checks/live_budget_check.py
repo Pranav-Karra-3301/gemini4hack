@@ -5,8 +5,10 @@ Usage: cd server && uv run --no-sync python checks/live_budget_check.py
 1. The rolling window: LIVE_MAX_STARTS starts per LIVE_BUDGET_WINDOW_MIN pass, the next one gets
    an error with retry_after_s, and starts leave the window on time; LIVE_MAX_STARTS=0 is no cap.
 2. POST /api/live/token through the real router with gemini.mint_live_token faked: 200s up to the
-   cap, then 429 + Retry-After + {"error", "retry_after_s"}; a failed mint doesn't use budget.
-3. WS /api/live over the cap: {"error", "retry_after_s"} then close 1013.
+   cap, then 429 + Retry-After + {"error"} (string values only: CoachError decodes [String: String]);
+   a failed mint doesn't use budget.
+3. WS /api/live (upstream connect faked to fail): over the cap {"error"} then close 1013; a failed
+   upstream gives the start back; a ?resume= socket doesn't count.
 No Gemini calls, no server, no models.
 """
 
@@ -55,8 +57,11 @@ def window() -> None:
     check(len(live_budget._starts) == 2, "refund gives one start back")
     reset(0, 10)
     check(all(live_budget.take(now=t) is None for t in range(50)), "LIVE_MAX_STARTS=0: no cap")
-    os.environ["LIVE_MAX_STARTS"] = "junk"
-    check(live_budget.limits()[0] == 20, "a bad LIVE_MAX_STARTS falls back to 20")
+    for bad in ("junk", "inf", "1e400", "-5", "nan"):
+        os.environ["LIVE_MAX_STARTS"] = bad
+        check(live_budget.limits()[0] == 20, f"LIVE_MAX_STARTS={bad} falls back to 20")
+    os.environ["LIVE_MAX_STARTS"], os.environ["LIVE_BUDGET_WINDOW_MIN"] = "5", "0"
+    check(live_budget.limits() == (5, 600), f"LIVE_BUDGET_WINDOW_MIN=0 falls back to 10 min: {live_budget.limits()}")
 
 
 def routes() -> None:
@@ -65,8 +70,13 @@ def routes() -> None:
     app.include_router(live_token.router)
     app.include_router(cam.router)
     client = TestClient(app)
-    real_mint = gemini.mint_live_token
+    real_mint, real_open = gemini.mint_live_token, cam.LiveBridge._open
     fail = {"on": False}
+
+    async def fake_open(self):
+        raise OSError("fake upstream down")
+
+    cam.LiveBridge._open = fake_open
 
     async def fake_mint(*args, **kwargs):
         if fail["on"]:
@@ -83,9 +93,9 @@ def routes() -> None:
         r = client.post("/api/live/token", json={"mode": "camera"})
         body = r.json()
         check(r.status_code == 429, f"third mint -> {r.status_code}")
-        check(r.headers.get("retry-after") == str(body.get("retry_after_s")) and body.get("retry_after_s", 0) > 0,
-              f"Retry-After {r.headers.get('retry-after')} matches retry_after_s {body.get('retry_after_s')}")
-        check("Live budget reached" in body.get("error", ""), f"error text: {body.get('error')!r}")
+        check(int(r.headers.get("retry-after") or 0) > 0, f"Retry-After: {r.headers.get('retry-after')}")
+        check("Live budget reached" in body.get("error", "") and all(isinstance(v, str) for v in body.values()),
+              f"body is string-only (decodes in CoachError): {body}")
 
         reset(1, 10)
         fail["on"] = True
@@ -95,21 +105,31 @@ def routes() -> None:
         r = client.post("/api/live/token", json={"mode": "camera"})
         check(r.status_code == 200, f"a failed mint didn't use the budget: next mint -> {r.status_code}")
 
-        reset(1, 10)
-        live_budget.take()
         os.environ.setdefault("GEMINI_API_KEY", "fake-key-for-check")
-        msg, code = None, None
-        try:
-            with client.websocket_connect("/api/live") as ws:
-                msg = ws.receive_json()
-                ws.receive_text()
-        except WebSocketDisconnect as exc:
-            code = exc.code
-        check(bool(msg) and "Live budget reached" in msg.get("error", "") and msg.get("retry_after_s", 0) > 0,
-              f"WS over the cap sends the error: {msg}")
-        check(code == 1013, f"WS closes 1013: {code}")
+
+        def ws_try(path):
+            msg, code = None, None
+            try:
+                with client.websocket_connect(path) as ws:
+                    msg = ws.receive_json()
+                    ws.receive_text()
+            except WebSocketDisconnect as exc:
+                code = exc.code
+            return msg, code
+
+        reset(1, 10)
+        msg, code = ws_try("/api/live")
+        check(code == 1011 and "upstream connect failed" in (msg or {}).get("error", ""), f"upstream down -> 1011: {msg}")
+        check(len(live_budget._starts) == 0, "a failed upstream gives its start back")
+        live_budget.take()
+        msg, code = ws_try("/api/live")
+        check(bool(msg) and "Live budget reached" in msg.get("error", ""), f"WS over the cap sends the error: {msg}")
+        check(code == 1013, f"WS over the cap closes 1013: {code}")
+        msg, code = ws_try("/api/live?resume=handle-1")
+        check(code == 1011 and len(live_budget._starts) == 1,
+              f"WS ?resume= isn't refused or counted over the cap: close {code}, starts {len(live_budget._starts)}")
     finally:
-        gemini.mint_live_token = real_mint
+        gemini.mint_live_token, cam.LiveBridge._open = real_mint, real_open
 
 
 def main() -> int:
