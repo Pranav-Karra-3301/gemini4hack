@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LiDAR demo: Sees in 3D first</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,400..700&family=Google+Sans+Code:wght@400..600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #05060b;
+        color: #eef3ff;
+        font-family: 'Google Sans Flex', system-ui, sans-serif;
+      }
+      .pad {
+        height: 80vh;
+        display: grid;
+        place-items: center;
+        color: rgba(238, 243, 255, 0.45);
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="pad">The previous chapter</div>
+    <section id="lidar"></section>
+    <div class="pad">The next chapter</div>
+    <script type="module">
+      import { mountLidar } from './lidar.js';
+      window.__lidar = mountLidar(document.getElementById('lidar'), {
+        label: '01 · Sees in 3D first',
+        title: 'It sees in 3D first.',
+        lede: 'LiDAR measures the scene on the phone before you press anything.',
+        steps: [
+          { title: 'LiDAR', text: 'A dot grid lands on every surface.' },
+          { title: 'Distance', text: 'Every point knows how far it is.' },
+          { title: 'Gemini reads the space', text: 'Who is near, what is far, where the light comes from.' },
+        ],
+      });
+    </script>
+  </body>
+</html>
