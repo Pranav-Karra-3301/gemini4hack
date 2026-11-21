@@ -6,6 +6,7 @@ shots with sliders Gemini can drive and teach with.
 
 - **Start here:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md): components, data flows, latency
   and cost budget, security, how to run everything, known gaps.
+- **Testing the Mac app on your own Mac:** [`docs/TEAMMATE_SETUP.md`](docs/TEAMMATE_SETUP.md).
 - API: [`docs/CORE_API.md`](docs/CORE_API.md). Gemini usage and cost: [`docs/BEST_PRACTICES.md`](docs/BEST_PRACTICES.md).
 - Apps: [`apple/CoachCam`](apple/CoachCam/README.md) (iPhone),
   [`apple/CoachStudio`](apple/CoachStudio/README.md) (Mac), shared package `apple/CoachKit`.
