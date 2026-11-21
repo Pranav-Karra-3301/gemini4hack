@@ -1,6 +1,7 @@
 # How we work
 
 These rules are for both of us and for every agent we run. Agents should treat them as mandatory.
+[AGENTS.md](AGENTS.md) covers how agents do the work itself: tests, scope, and dos and don'ts.
 
 ## 1. Every piece of work starts with a GitHub issue
 
@@ -22,6 +23,9 @@ a comment. Start every agent comment with a tag naming the agent and its branch:
 [claude · feat/12-depth-slider] Claiming. Touching web/src/controls.js, and server/app.py for a new /depth route.
 ```
 
+**To ping an agent,** comment on its issue or PR, or write its branch name in your comment.
+**To ping a person,** @mention them. Agents leave @mentions to the humans.
+
 Comment when one of these happens:
 
 - **You need to change something outside your claim.** This includes files, API shapes, env vars,
@@ -31,21 +35,23 @@ Comment when one of these happens:
 - **You're blocked.** Also add the `blocked` label.
 - **Your PR is open.** Post the link.
 
-Re-read your issue with `gh issue view <n> --comments` at three points: before you start, before you
-push, and before you open the PR. Leave out status chatter. Post a comment only if it changes what
-someone else will do.
+Leave out status chatter. Post a comment only if it changes what someone else will do.
 
 ## 2. All work happens in a worktree
 
-The main checkout stays on `main` and stays clean. No one edits files there. It's only for pulling
-and for creating worktrees. Each issue gets one branch, one worktree and one agent.
+No one edits files in the main checkout. It stays on `main`, and it's only for pulling, creating
+worktrees and running a coordinator session (see section 4). Each issue gets one branch, one worktree
+and one agent.
 
 ```sh
 git fetch origin
 git worktree add .worktrees/12-depth-slider -b feat/12-depth-slider origin/main
 cd .worktrees/12-depth-slider
 cp ../../.env .            # gitignored files aren't copied into a new worktree
+claude                     # start the agent here
 ```
+
+The first time you push the branch, run `git push -u origin HEAD`.
 
 `.worktrees/` is gitignored. `claude --worktree` is fine to use, but rename its branch to match the
 convention before you push, e.g. `git branch -m feat/12-depth-slider`. If two worktrees run dev servers
@@ -78,9 +84,40 @@ For example: `feat(web): add depth slider`, `fix(server): clamp masks to image b
   side can see which files you're changing.
 - Before you mark the PR ready, run `git fetch origin && git rebase origin/main`, fix any conflicts and
   check that it still runs. Then push with `git push --force-with-lease`.
-- PRs are squash-merged; the repo allows no other merge method. The branch is deleted automatically.
-- You can merge your own PR once it works. The exception: a PR that changes a shared contract (API
-  shapes, env vars, dependencies, shared config) needs a 👍 from the other person first.
+- **PRs need no approvals.** Merge your own PR with `gh pr merge --squash` once it works and is
+  rebased. If it changes a shared contract (API shapes, env vars, dependencies, shared config),
+  comment on the affected issues first.
+- `main` accepts only squash-merged PRs. Direct pushes and force-pushes are blocked, and the branch
+  is deleted automatically after the merge.
+
+## 4. Knowing when you're pinged
+
+GitHub doesn't notify you about comments posted from your own account, and that's where your own
+agents post. So pings come from `scripts/gh-inbox`, which reads the repo's comments directly.
+
+- **In a worktree,** it shows comments by others on that branch's issue or PR, plus any comment that
+  names the branch.
+- **In the main checkout,** it shows any comment that @mentions you.
+
+You need the GitHub CLI, logged in (`gh auth login`).
+
+**With Claude Code there's almost nothing to set up.** The repo's `.claude/settings.json` runs
+`scripts/gh-inbox --hook` when a session starts and on every prompt, so new pings land in the agent's
+context. Approve the project's hooks the first time Claude Code asks. [CLAUDE.md](CLAUDE.md) also tells
+each agent to start a background Monitor (`scripts/gh-inbox --watch 60`) once it claims an issue. That
+way pings reach it in the middle of a task, not only when you type.
+
+**For yourself:**
+
+- Run a coordinator Claude session in the main checkout. Use it to triage issues and start agents; it
+  sees anything that @mentions you. To keep it checking while you're away, run:
+  ```
+  /loop 10m Run scripts/gh-inbox and tell me about anything new.
+  ```
+- On GitHub, set the repo's **Watch** to at least "Participating and @mentions" and turn on GitHub
+  Mobile notifications, so you also see the other person's @mentions on your phone.
+
+Any other agent can call `scripts/gh-inbox` by hand. Use `scripts/gh-inbox --help` for the options.
 
 ## Never
 
