@@ -324,8 +324,13 @@ async def api_depth(image: UploadFile = File(...)):
 @app.post("/api/regions")
 async def api_regions(image: UploadFile = File(...)):
     data = await image.read()
+    try:  # the prompt gets a depth summary; depth.py caches by image bytes, so /api/depth reuses it
+        depth_m, _ = await run_in_threadpool(depth.infer_depth, data)
+    except Exception:
+        log.warning("regions: depth failed, asking without it", exc_info=True)
+        depth_m = None
     try:
-        return await regions.find_regions(data, image.content_type or "image/jpeg")
+        return await regions.find_regions(data, image.content_type or "image/jpeg", depth_m)
     except Exception as exc:
         return _err(502, exc)
 

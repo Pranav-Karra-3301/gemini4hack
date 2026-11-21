@@ -7,8 +7,9 @@ atomically). Ids are time-sortable `YYYYMMDD-HHMMSS-xxxx` (UTC; xxxx = 3 hex dig
 millisecond + 1 random hex digit, so ids sort to the millisecond).
 
 Pipeline: one asyncio worker, newest shot first, re-picking the newest shot after every phase:
-  A. depth (GPU) ∥ score ∥ regions   score and regions are network-bound and don't need depth,
-                                     so they overlap Depth Pro instead of waiting for it
+  A. depth (GPU) ∥ score ∥ regions   score and regions are network-bound, so they overlap Depth
+                                     Pro; regions wait up to REGIONS_DEPTH_WAIT_S for its depth
+                                     summary, then go without
   B. masks (GPU; needs regions; reuses depth.py's LRU depth map for the same image bytes)
      ∥ suggest (Gemini edit plan, edit.py; needs regions, not masks: region depths come from
      their boxes in depth.png, and the default subject is the first focus region)
@@ -65,6 +66,8 @@ PING_S = 15.0
 SUB_QUEUE = 512
 STAGES = ("depth", "score", "regions", "masks", "suggest")
 PHASES = (("depth", "score", "regions"), ("masks", "suggest"))
+# How long regions wait for the depth running beside them (their prompt gets a depth summary).
+REGIONS_DEPTH_WAIT_S = float(os.environ.get("REGIONS_DEPTH_WAIT_S", "2"))
 FILES = {  # servable asset files -> media type
     "image.jpg": "image/jpeg", "original.jpg": "image/jpeg", "thumb.jpg": "image/jpeg",
     "depth.png": "image/png", "regions.json": "application/json", "score.json": "application/json",
@@ -313,8 +316,41 @@ async def _do_score(sid: str, data: bytes) -> dict:
     return {"url": _url(sid, "score.json"), "summary": summary}
 
 
+def _read_depth_m(sid: str) -> np.ndarray:
+    """depth.png (uint16 mm, 65535 = far, 0 = unknown) back to metres (inf = far, nan = unknown)."""
+    mm = np.asarray(Image.open(_dir(sid) / "depth.png"))
+    m = mm.astype(np.float32) / 1000.0
+    m[mm == 65535] = np.inf
+    m[mm == 0] = np.nan
+    return m
+
+
+async def _depth_for_regions(sid: str) -> np.ndarray | None:
+    """This shot's depth for the regions prompt. Depth runs beside regions and is usually done
+    in 0.3-0.6 s, so wait up to REGIONS_DEPTH_WAIT_S for it; None (regions go without) if it
+    fails or is late, e.g. while SAM or SHARP holds the GPU."""
+    deadline = time.monotonic() + REGIONS_DEPTH_WAIT_S
+    while True:
+        rec = _records.get(sid)
+        status = _status(rec, "depth") if rec else "none"
+        if status == "done":
+            break
+        if status not in ("pending", "running"):
+            return None
+        if time.monotonic() >= deadline:
+            log.info("shot %s regions: depth not ready after %.1f s, going without", sid, REGIONS_DEPTH_WAIT_S)
+            return None
+        await asyncio.sleep(0.05)
+    try:
+        return await asyncio.to_thread(_read_depth_m, sid)
+    except OSError:
+        log.warning("shot %s regions: depth.png unreadable, going without", sid, exc_info=True)
+        return None
+
+
 async def _do_regions(sid: str, data: bytes) -> dict:
-    res = await regions.find_regions(data, "image/jpeg")  # retries once itself
+    depth_m = await _depth_for_regions(sid)
+    res = await regions.find_regions(data, "image/jpeg", depth_m)  # retries once itself
     await asyncio.to_thread(_write_json, sid, "regions.json", res)
     return {"url": _url(sid, "regions.json"), "count": len(res.get("regions") or [])}
 
