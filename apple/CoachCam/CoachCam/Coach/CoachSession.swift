@@ -87,7 +87,7 @@ final class CoachSession {
     @ObservationIgnored private var readyLostToMove = false
     @ObservationIgnored private var pendingScene = false
     @ObservationIgnored private var sceneShiftForDirector = false
-    @ObservationIgnored private var lastHeard = ""
+    @ObservationIgnored private var heardForDirector = ""
     @ObservationIgnored private let readyHaptic = ReadyHaptic()
     @ObservationIgnored private var director: Director?
     @ObservationIgnored private var directionAtLastTick = 0
@@ -384,7 +384,7 @@ final class CoachSession {
     private func tickIfQuiet() {
         guard phase == .live, let live else { return }
         let now = Date()
-        if !heardText.isEmpty { lastHeard = heardText }
+        if !heardText.isEmpty { heardForDirector = heardText }
         ensureDirector(live)
         checkScene(live, now)
         let playing = audio?.isPlaying ?? false
@@ -562,7 +562,7 @@ final class CoachSession {
             "last_tip": director?.latest?.tip ?? "",
             "ready": ready,
             "scene_shift": shift,
-            "heard": lastHeard,
+            "heard": heardForDirector,
         ]
     }
 
