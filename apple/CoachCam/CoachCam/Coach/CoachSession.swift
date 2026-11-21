@@ -19,6 +19,8 @@ protocol CoachHost: AnyObject {
     func coachSetCamera(_ settings: CameraSettings) async -> CameraSettings
     /// Takes and syncs a photo; returns the tool result.
     func coachTakePhoto(reason: String?) async -> [String: Any]
+    /// Current EV, zoom and white balance, for instant relative voice commands.
+    var coachCamera: QuickCommands.Camera { get }
 }
 
 /// The live camera coach, entirely on the phone: an agent loop on Gemini 4 (`GeminiDirect`,
@@ -210,9 +212,17 @@ final class CoachSession {
     private func applyVoice() {
         if voiceOn, phase == .live {
             let listener = audio ?? Listener()
+            listener.onPartial = { [weak self] text in self?.heardPartial(text) }
             listener.onUtterance = { [weak self] text, clip in
-                self?.pendingClip = clip
-                self?.userSaid(text)
+                guard let self else { return }
+                defer { self.quick.reset() }
+                // A short command already applied from the partials: don't make Gemini redo it.
+                if self.quick.covers(text) {
+                    log.info("quick command done: \(text, privacy: .public)")
+                    return
+                }
+                self.pendingClip = clip
+                self.userSaid(text)
             }
             audio = listener
             if !listener.isRunning { Task { await listener.start() } }
@@ -239,6 +249,25 @@ final class CoachSession {
     /// Core's TTS PCM is no longer used on the phone; the review speaks through `Speaker`.
     func playSpeech(pcm24k: Data) async {
         log.notice("playSpeech(pcm24k:) ignored (\(pcm24k.count) bytes): the coach speaks through Speaker")
+    }
+
+    @ObservationIgnored private var quick = QuickCommands()
+
+    /// Instant voice commands from the partial transcript: the dials move while the user talks.
+    private func heardPartial(_ text: String) {
+        guard phase == .live, let host else { return }
+        for action in quick.actions(for: text, camera: host.coachCamera) {
+            switch action {
+            case .set(let settings, let ack, let hint):
+                log.info("quick: \(hint, privacy: .public)")
+                setHint(hint, fromModel: true)
+                Speaker.shared.say(ack)
+                Task { _ = await host.coachSetCamera(settings) }
+            case .takePhoto:
+                log.info("quick: take photo")
+                Task { _ = await host.coachTakePhoto(reason: "the user asked") }
+            }
+        }
     }
 
     private func userSaid(_ text: String) {

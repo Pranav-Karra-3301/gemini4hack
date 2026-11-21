@@ -15,6 +15,8 @@ final class Listener {
 
     /// The utterance's text and a 16-bit WAV of the last few seconds of voice (for the reaction).
     @ObservationIgnored var onUtterance: ((String, Data?) -> Void)?
+    /// Every partial transcript as it grows (for instant voice commands); reset per utterance.
+    @ObservationIgnored var onPartial: ((String) -> Void)?
 
     @ObservationIgnored private let log = Logger(subsystem: "app.heliocam.CoachCam", category: "Listener")
     @ObservationIgnored private let engine = AVAudioEngine()
@@ -31,7 +33,7 @@ final class Listener {
     @ObservationIgnored private var silence: Task<Void, Never>?
     @ObservationIgnored private var spokeUntil = Date.distantPast
 
-    static let pause: Duration = .milliseconds(1200)
+    static let pause: Duration = .milliseconds(700)
 
     static func requestAccess() async -> Bool {
         let speech = await withCheckedContinuation { (c: CheckedContinuation<Bool, Never>) in
@@ -123,6 +125,7 @@ final class Listener {
         guard isRunning, gen == generation else { return }   // a cancelled task's last callback
         if let text, !text.isEmpty, Date() > spokeUntil {
             partial = text
+            onPartial?(text)
             silence?.cancel()
             silence = Task { [weak self] in
                 try? await Task.sleep(for: Self.pause)
