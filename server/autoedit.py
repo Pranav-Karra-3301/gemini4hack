@@ -5,7 +5,7 @@
 
 Events (the phone animates each one):
   stage  {"stage": "depth"|"masks"|"plan"|"render"|"critique", "say": "<=8 words"}
-  step   {"round": n, "values": {...}, "layers": [{id, target, mask_url, values}], "say", "subject"}
+  step   {"round": n, "values": {...}, "layers": [{id, target, label, mask_url, values}], "say", "subject"}
   done   {"values", "layers", "say", "rounds", "ms", "model", "subject", "timing"}
   error  {"error": "..."}
 
@@ -393,7 +393,8 @@ def clean_recipe(p, cat: dict, default_subject: str | None) -> dict:
                 if c:
                     lv[k] = c
         if lv:
-            layers.append({"id": f"l{len(layers) + 1}", "target": tgt, "mask_url": cat[tgt]["url"], "values": lv})
+            layers.append({"id": f"l{len(layers) + 1}", "target": tgt, "label": _words(cat[tgt].get("label") or tgt, 3),
+                           "mask_url": cat[tgt]["url"], "values": lv})
     subject = p.get("subject") if p.get("subject") in cat else default_subject
     return {"values": vals, "layers": layers, "say": _words(p.get("say"), 12) or "Edited for you.",
             "subject": subject}
