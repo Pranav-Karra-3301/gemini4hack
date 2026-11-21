@@ -25,7 +25,7 @@
 	<key>NSCameraUsageDescription</key>
 	<string>Heliocam is a camera: it shows the viewfinder and lets the coach set focus, exposure and white balance.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Talk to the coach while you shoot. Your voice goes straight to Gemini Live and is not recorded.</string>
+	<string>Talk to the coach while you shoot, and hold the mic to say how to edit a photo. Short voice clips go to Gemini to make the edit and are not saved.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Talk to the coach while you shoot. Your words are recognized on this iPhone and sent to the coach as text.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

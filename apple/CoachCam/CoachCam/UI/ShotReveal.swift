@@ -14,6 +14,10 @@ struct ShotReveal: View {
     @State private var depthOpacity: Double = 0
     @State private var holding = false
     @State private var drag: CGFloat = 0
+    /// The edited photo open full screen (tap the photo).
+    @State private var detail: UIImage?
+    @State private var pressStart: Date?
+    @State private var holdTask: Task<Void, Never>?
 
     static let geminiBlue = Color(red: 0.36, green: 0.55, blue: 0.95)
 
@@ -44,6 +48,8 @@ struct ShotReveal: View {
                             if let cg = model.photo?.cgImage, let png = model.depthPNG {
                                 DepthExplodeView(photo: cg, depthPNG: png)
                             }
+                        case .looks:
+                            ShaderLab(model: model)
                         }
                     }
                     .transition(.opacity)
@@ -85,6 +91,14 @@ struct ShotReveal: View {
             .offset(y: max(0, drag))
             .opacity(1 - Double(min(max(drag, 0) / 600, 0.5)))
         }
+        .overlay {
+            if let detail {
+                PhotoDetailView(image: detail, hiRes: { await model.detailImage() }) {
+                    withAnimation(.easeOut(duration: 0.22)) { self.detail = nil }
+                }
+                .transition(.opacity)
+            }
+        }
         .ignoresSafeArea()
         .statusBarHidden()
         .onChange(of: model.depthSerial) { _, _ in
@@ -104,6 +118,8 @@ struct ShotReveal: View {
             if m != .photo, voice.isListening { voice.cancel() }
         }
         .onDisappear { voice.cancel() }
+        .onAppear { voice.prepare() }
+        .onChange(of: model.photo) { _, _ in detail = nil }
     }
 
     @ViewBuilder
@@ -135,15 +151,37 @@ struct ShotReveal: View {
         }
     }
 
-    /// Hold: the original. Drag down: close.
+    /// Tap: the edited photo full screen. Hold (0.2 s): the original. Drag down: close. One gesture
+    /// tells them apart, so none swallows another.
     private func photoGesture(height: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 0)
             .onChanged { g in
-                if g.translation.height > 14 { holding = false; drag = g.translation.height } else { holding = true }
+                if pressStart == nil {
+                    pressStart = Date()
+                    holdTask = Task {
+                        try? await Task.sleep(for: .milliseconds(200))
+                        if !Task.isCancelled { holding = true }
+                    }
+                }
+                if g.translation.height > 14 {
+                    holdTask?.cancel()
+                    holding = false
+                    drag = g.translation.height
+                } else if abs(g.translation.width) > 14 || g.translation.height < -14 {
+                    holdTask?.cancel()
+                }
             }
             .onEnded { g in
+                holdTask?.cancel(); holdTask = nil
+                let wasHolding = holding
+                let quick = Date().timeIntervalSince(pressStart ?? .distantPast) < 0.35
+                pressStart = nil
                 holding = false
-                if g.translation.height > 110 || g.predictedEndTranslation.height > 260 {
+                let moved = hypot(g.translation.width, g.translation.height)
+                if mode == .photo, !wasHolding, quick, moved < 10 {
+                    drag = 0
+                    openDetail()
+                } else if g.translation.height > 110 || g.predictedEndTranslation.height > 260 {
                     withAnimation(.easeOut(duration: 0.22)) { drag = height }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                         model.dismiss()
@@ -153,6 +191,12 @@ struct ShotReveal: View {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { drag = 0 }
                 }
             }
+    }
+
+    private func openDetail() {
+        guard let img = model.edited ?? model.photo else { return }
+        UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.5)
+        withAnimation(.easeOut(duration: 0.22)) { detail = img }
     }
 
     /// Aspect fit of the photo in the box.
@@ -166,7 +210,7 @@ struct ShotReveal: View {
 
 /// What the viewer shows.
 enum ViewMode: Int, CaseIterable, Hashable {
-    case photo, depth, splat, layers
+    case photo, depth, splat, layers, looks
 
     var is3D: Bool { self == .splat || self == .layers }
 
@@ -176,6 +220,7 @@ enum ViewMode: Int, CaseIterable, Hashable {
         case .depth: "circle.lefthalf.filled"
         case .splat: "cube.transparent"
         case .layers: "square.3.layers.3d"
+        case .looks: "camera.filters"
         }
     }
 
@@ -185,6 +230,7 @@ enum ViewMode: Int, CaseIterable, Hashable {
         case .depth: "Depth map"
         case .splat: "3D"
         case .layers: "Layers"
+        case .looks: "Looks"
         }
     }
 }

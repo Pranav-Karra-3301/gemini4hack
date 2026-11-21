@@ -60,6 +60,7 @@ final class RevealModel {
     /// ~0.7 s) and the next one starts this long before the previous one lands.
     static let stepOverlap: TimeInterval = 0.25
     private static let log = Logger(subsystem: "app.heliocam.CoachCam", category: "Edit")
+    private static let voiceLog = Logger(subsystem: "app.heliocam.CoachCam", category: "Voice")
     nonisolated static let previewSide = 1080
 
     // MARK: Lifecycle
@@ -164,6 +165,22 @@ final class RevealModel {
         }
     }
 
+    /// The current edit at high resolution (the photo's own size, capped at `detailSide`) for the
+    /// zoom view, rendered off the main thread. The original when no fader is moved.
+    func detailImage() async -> UIImage? {
+        let now = Date()
+        var v: [Slider: Double] = [:]
+        for s in Self.faders { if let x = sliders.displayedValue(s, at: now) { v[s] = x } }
+        let inputs = RenderInputs(renderer: renderer, source: source, depth: depth)
+        if v.allSatisfy({ $0.value == $0.key.spec.neutralValue }) { return photo }
+        let started = Date()
+        let img = await Task.detached(priority: .userInitiated) { inputs.render(values: v, side: Self.detailSide) }.value
+        Self.log.debug("Detail render \(Int(Date().timeIntervalSince(started) * 1000)) ms \(Int(img?.size.width ?? 0))x\(Int(img?.size.height ?? 0))")
+        return img
+    }
+
+    nonisolated static let detailSide = 4096
+
     // MARK: Gemini edits
 
     /// Edit for Me: Gemini looks at the photo and plays a few fader moves, one after another.
@@ -179,7 +196,12 @@ final class RevealModel {
     /// Decision, which picks one fader move (or an undo when the user sounds let down right after
     /// an edit). The move glides at once; `voiceEdit(_:)` decides whether Gemini 4 refines it.
     func voiceReleased(wav: Data?) {
-        guard isShown, phase == .fix, let gemini, let photo, let wav else { fastTask = nil; return }
+        guard isShown, phase == .fix, let gemini, let photo, let wav else {
+            Self.voiceLog.notice("Voice route: no fast path (shown=\(self.isShown) fix=\(self.phase == .fix) key=\(self.gemini != nil) clip=\(wav?.count ?? 0) bytes)")
+            fastTask = nil
+            return
+        }
+        Self.voiceLog.notice("Voice route: Decision fast path with a \(wav.count) byte clip")
         editTask?.cancel(); editTask = nil
         sliders.cancelGuide()
         let gen = generation
@@ -208,12 +230,14 @@ final class RevealModel {
             let d: GeminiDirect.Decision
             do { d = try await gemini.decide(input: input, questions: questions) } catch {
                 Self.log.error("Decide failed: \(error.localizedDescription, privacy: .public)")
+                Self.voiceLog.error("Voice result: Decision failed: \(error.localizedDescription, privacy: .public)")
                 return .nothing
             }
             guard let self, gen == self.generation, !Task.isCancelled else { return .nothing }
             let edit = d.top("edit") ?? ("none", 0)
             let reaction = d.top("reaction")
             Self.log.debug("Decide \(d.milliseconds) ms edit=\(edit.option, privacy: .public) \(edit.p) reaction=\(reaction?.option ?? "-", privacy: .public)")
+            Self.voiceLog.notice("Voice result: Decision \(d.milliseconds) ms edit=\(edit.option, privacy: .public) p=\(edit.p) reaction=\(reaction?.option ?? "-", privacy: .public)")
             if recent, edit.option == "undo" && edit.p > 0.4 || (reaction?.option == "disappointed" && (reaction?.p ?? 0) > 0.5 && edit.option == "none") {
                 self.undoLast()
                 return .undone
@@ -241,11 +265,13 @@ final class RevealModel {
             guard let self, gen == self.generation, self.isShown else { return }
             switch outcome {
             case .undone:
+                Self.voiceLog.notice("Voice route: undo (transcript \"\(t, privacy: .public)\")")
                 self.working = false
                 self.speaker?("Back to how it was")
                 return
             case .moved(let option):
                 if t.split(whereSeparator: \.isWhitespace).count <= 4 {
+                    Self.voiceLog.notice("Voice route: fast move \(option, privacy: .public) only (transcript \"\(t, privacy: .public)\")")
                     self.working = false
                     self.speaker?(Self.fastMoves[option]?.ack ?? "Done")
                     return
@@ -253,7 +279,12 @@ final class RevealModel {
             case .nothing:
                 break
             }
-            guard !t.isEmpty else { self.working = false; return }
+            guard !t.isEmpty else {
+                Self.voiceLog.notice("Voice route: nothing heard; idle")
+                self.working = false
+                return
+            }
+            Self.voiceLog.notice("Voice route: Gemini 4 (\(GeminiDirect.fastModel, privacy: .public)) for \"\(t, privacy: .public)\"")
             self.plan(request: t, model: GeminiDirect.fastModel)
         }
     }
@@ -358,6 +389,7 @@ final class RevealModel {
                                                      sliders: Self.faders, request: request, model: model)
                 guard let self, gen == self.generation, !Task.isCancelled else { return }
                 Self.log.debug("Gemini edit \(model, privacy: .public) \(plan.milliseconds) ms: \(plan.steps.map { "\($0.slider.rawValue)=\($0.value ?? 0)" }, privacy: .public)")
+                if request != nil { Self.voiceLog.notice("Voice result: Gemini 4 \(plan.milliseconds) ms, \(plan.steps.count) steps, says \"\(plan.say, privacy: .public)\"") }
                 self.working = false
                 if plan.steps.isEmpty {
                     self.speaker?(plan.say.isEmpty ? "It already looks good to me" : plan.say)
@@ -460,11 +492,11 @@ private struct RenderInputs: @unchecked Sendable {
     let source: CIImage?
     let depth: CIImage?
 
-    func render(values: [Slider: Double]) -> UIImage? {
+    func render(values: [Slider: Double], side: Int = RevealModel.previewSide) -> UIImage? {
         guard let source else { return nil }
         let recipe = EditRecipe(values: values)
         let out = renderer.render(source: source, depth: depth, subjectMask: nil,
-                                  recipe: recipe, quality: .preview(maxSide: RevealModel.previewSide))
+                                  recipe: recipe, quality: .preview(maxSide: side))
         guard let cg = renderer.cgImage(out) else { return nil }
         return UIImage(cgImage: cg)
     }
