@@ -86,6 +86,9 @@ public final class LiveSession: @unchecked Sendable {
     private var queuedControl: [(text: String, isToolResponse: Bool)] = [] // sent while not live
     private var pendingWrites = 0
     private var throttle: FrameThrottle
+    private var lastSentThumb: LumaThumbnail?
+    private var lastSentJPEG: Data?
+    private var sentFrames = 0
     private var output: (any LiveAudioOutput)?
     private var handle: String?
     private var rotateNow: ObjectIdentifier?           // socket we closed on purpose for a goAway
@@ -126,6 +129,14 @@ public final class LiveSession: @unchecked Sendable {
 
     /// The latest resumption handle (persist it to resume after an app relaunch, ≤2 h old).
     public var resumptionHandle: String? { lock.withLock { handle } }
+
+    /// Luma thumbnail of the newest frame actually sent (the one the throttle diffed; not recomputed).
+    public var latestSentThumbnail: LumaThumbnail? { lock.withLock { lastSentThumb } }
+
+    /// The newest sent JPEG and how many frames went out so far (a new count = a new frame).
+    public var latestSentFrame: (jpeg: Data, count: Int)? {
+        lock.withLock { lastSentJPEG.map { ($0, sentFrames) } }
+    }
 
     /// True while connected and past `setupComplete`.
     public var isLive: Bool { lock.withLock { phase == .live && socket != nil } }
@@ -341,7 +352,14 @@ public final class LiveSession: @unchecked Sendable {
             lock.withLock { throttle.reset() }
             return .invalid
         }
-        if send(.video(jpeg: data), kind: .video) { return .sent }
+        if send(.video(jpeg: data), kind: .video) {
+            lock.withLock {
+                lastSentThumb = thumb
+                lastSentJPEG = data
+                sentFrames += 1
+            }
+            return .sent
+        }
         lock.withLock { throttle.reset() }
         return .notLive
     }
