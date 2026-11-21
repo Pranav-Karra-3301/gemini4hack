@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Story demo: thesis, agent trace, under the hood</title>
+    <title>Story demo: thesis and agent trace</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -45,13 +45,11 @@
         </div>
       </div>
     </section>
-    <section id="hood"></section>
     <div class="pad">The footer</div>
     <script type="module">
       import { CHAPTERS } from '../config.js';
       import { mountThesis } from './thesis.js';
       import { AgentTrace } from './trace.js';
-      import { mountHood } from './hood.js';
 
       const coach = CHAPTERS.find((c) => c.id === 'coach');
       document.getElementById('coach-label').textContent = coach.label;
@@ -60,7 +58,6 @@
 
       window.__thesis = mountThesis(document.getElementById('thesis'));
       const trace = (window.__trace = new AgentTrace(document.getElementById('trace'), coach));
-      window.__hood = mountHood(document.getElementById('hood'));
 
       // A looping clock while the section is on screen, like the page's ScenePlayer.
       // ?t=1.0 runs the clock to 1.0 s, then freezes it and every animation (for screenshots).

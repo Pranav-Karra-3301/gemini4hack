@@ -124,7 +124,7 @@ export const CHAPTERS = [
       { text: '“Lower the phone. Hold.”', start: 4.8, end: 7.5 },
     ],
   },
-  { id: 'app', kind: 'app' },
+  { id: 'in-app', kind: 'app' },
   { id: 'footer', kind: 'footer' },
 ];
 
@@ -195,6 +195,7 @@ export const APP = {
       tech: 'MTKView · Metal',
     },
   ],
+  moreLabel: 'Also in the app',
   more: [
     'Live hint: “A little left, off the pole”',
     'A ghost frame where the subject should land',

@@ -224,8 +224,8 @@ whenNear(byId('looks'), () => {
   mountModule(byId('looks'), 'looks', 'mountLooks', [ch], plainSection(headMarkup(ch)));
 });
 
-whenNear(byId('app'), () => {
-  mountModule(byId('app'), 'app', 'mountApp', [], plainSection(`<p class="eyebrow">${APP.label}</p><h2 class="h2">${APP.title}</h2><p class="lede">${APP.lede}</p>`));
+whenNear(byId('in-app'), () => {
+  mountModule(byId('in-app'), 'app', 'mountApp', [], plainSection(`<p class="eyebrow">${APP.label}</p><h2 class="h2">${APP.title}</h2><p class="lede">${APP.lede}</p>`));
 });
 
 whenNear(byId('footer'), () => {
