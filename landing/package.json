@@ -9,7 +9,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@paper-design/shaders": "^0.0.82",
     "@sparkjsdev/spark": "^2.4.0",
     "three": "^0.187.0",
     "unicornstudio": "^2.6.1",
