@@ -5,8 +5,9 @@ Usage: cd server && uv run --no-sync python checks/proxy_auth_check.py
 The Vite dev proxy forwards with xfwd, so every /api request from it carries X-Forwarded-For and
 arrives from a loopback peer. Localhost through the proxy must pass without a token; a LAN client
 through the proxy, a spoofed X-Forwarded-For from a LAN peer, and tunnel requests need the token.
-A request from another website's page (a foreign Origin, issue #22) loses the loopback exemption
-too, so it can't read /api/pair or use Core without the token; pages on localhost keep it.
+A request from another website's page (issue #22: a foreign Origin, or a non-loopback Host /
+X-Forwarded-Host from DNS rebinding) loses the loopback exemption too, so it can't read /api/pair
+or use Core without the token; pages on localhost keep it.
 Calls app.token_ok / app.is_local directly with a throwaway COACH_TOKEN; no server, no models.
 """
 
@@ -55,6 +56,15 @@ CASES = [
     ("localhost lookalike", {"origin": "http://localhost.evil.example"}, {}, "127.0.0.1", False, False),
     ("Origin: null (sandboxed iframe, file://)", {"origin": "null"}, {}, "127.0.0.1", False, False),
     ("other website with the token", {"origin": "https://evil.example", **BEARER}, {}, "127.0.0.1", True, False),
+    # DNS rebinding: the page's same-origin fetch sends no Origin, only its own Host
+    ("Mac app (Host 127.0.0.1:8787)", {"host": "127.0.0.1:8787"}, {}, "127.0.0.1", True, True),
+    ("browser on localhost:8787", {"host": "localhost:8787"}, {}, "127.0.0.1", True, True),
+    ("rebinding page direct", {"host": "rebind.attacker.example:8787"}, {}, "127.0.0.1", False, False),
+    ("page on localhost via vite", {"host": "127.0.0.1:8787", "x-forwarded-host": "localhost:5320",
+                                    "x-forwarded-for": "127.0.0.1"}, {}, "127.0.0.1", True, True),
+    ("rebinding page via vite", {"host": "127.0.0.1:8787", "x-forwarded-host": "rebind.attacker.example:5320",
+                                 "x-forwarded-for": "127.0.0.1"}, {}, "127.0.0.1", False, False),
+    ("Host [::1]", {"host": "[::1]:8787"}, {}, "::1", True, True),
 ]
 
 
