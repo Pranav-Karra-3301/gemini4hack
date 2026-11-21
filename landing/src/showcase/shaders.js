@@ -1,6 +1,6 @@
-// Showcase 2D shaders (WebGL2): the flat stages, full-bleed ("cover"). One full-screen pass draws the
-// photo, the Depth Pro map and its scan line; the 3D stages are the splat (src/memory3d/). If the
-// splat cannot load, the edit below stands in for it on the flat photo.
+// Showcase 2D shader (WebGL2): the opening photo, full-bleed ("cover"), in one full-screen pass; the
+// 3D stages are the splat (src/memory3d/). If the splat cannot load, the distance-weighted light edit
+// below stands in for it on the flat photo.
 // Textures are addressed top-left = (0,0) (no UNPACK_FLIP_Y), so uv.y is flipped here.
 
 export const VERT = /* glsl */ `#version 300 es
@@ -14,19 +14,14 @@ precision highp float;
 precision highp sampler2D;
 
 uniform sampler2D uPhoto;   // SRGB8_ALPHA8 + mips: sampled values are linear light
-uniform sampler2D uDepth;   // R16F decoded from the packed PNG; log depth, near = 1
-uniform sampler2D uMask;    // R8 + mips: the three people
+uniform sampler2D uDepth;   // fallback edit: R16F decoded from the packed PNG; log depth, near = 1
+uniform sampler2D uMask;    // fallback edit: R8 + mips, the three people
 uniform vec2 uRes;          // drawing-buffer size (px)
 uniform vec2 uTex;          // photo size (px)
-uniform float uDepthMix;    // stage 2: photo -> depth map
-uniform float uScan;        // stage 2: scan depth (1 = near ... 0 = far)
-uniform float uScanOn;
-uniform float uEdit;        // fallback stage 4: the edit (0 = original, hold to compare)
-uniform vec3 uFaders;       // fallback stage 4: people EV, warmth, background EV
+uniform float uEdit;        // fallback edit (0 = original, hold to compare); depth + mask bound only when > 0
+uniform vec3 uFaders;       // fallback edit: people EV, warmth, background EV
 
 out vec4 outColor;
-
-const vec3 BLUE = vec3(0.0704, 0.2705, 1.0);    // #4C8DFF, linear
 
 // Log depth -> a disparity-like value so near layers separate the way real parallax does.
 float disp(float d) {
@@ -42,8 +37,6 @@ vec3 shoulder(vec3 x) {
   return min(x, vec3(k)) + (1.0 - k) * (1.0 - exp(-over / (1.0 - k)));
 }
 
-float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
-float toLin(float c) { return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4); }
 vec3 toSRGB(vec3 c) {
   c = clamp(c, 0.0, 1.0);
   return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
@@ -59,26 +52,12 @@ void main() {
   vec2 gx = dFdx(p);
   vec2 gy = dFdy(p);
 
-  float d = depthAt(p);
-  float m = textureGrad(uMask, p, gx, gy).r;
-  vec3 photo = textureGrad(uPhoto, p, gx, gy).rgb;
-  vec3 col = photo;
+  vec3 col = textureGrad(uPhoto, p, gx, gy).rgb;
 
-  // ---- 2. Depth Pro reads distance --------------------------------------------------------
-  col = mix(col, vec3(toLin(pow(d, 1.35))), uDepthMix);
-
-  if (uScanOn > 0.001) {
-    float fw = clamp(fwidth(d), 2e-5, 0.004);
-    float dd = d - uScan;
-    float line = 1.0 - smoothstep(0.7, 1.9, abs(dd) / fw);
-    float halo = exp(-abs(dd) / (fw * 7.0));
-    float wake = step(0.0, dd) * exp(-dd * 28.0) * step(0.02, d);
-    col += BLUE * (0.42 * halo + 0.10 * wake) * uScanOn;
-    col = mix(col, BLUE * 1.15, line * uScanOn);
-  }
-
-  // ---- 4. Gemini edits by light (fallback when the 3D memory is unavailable) ---------------
+  // ---- Gemini lights it by distance (fallback when the 3D scene is unavailable) ------------
   if (uEdit > 0.001) {
+    float d = depthAt(p);
+    float m = textureGrad(uMask, p, gx, gy).r;
     float mS = textureLod(uMask, p, 3.0).r;
     float mSoft = clamp(max(m, mS * 0.85), 0.0, 1.0);
     float far = 1.0 - disp(d);

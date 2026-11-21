@@ -1,25 +1,31 @@
 /* =====================================================================
-   Heliocam type + layout tokens (landing/DESIGN_TYPE.md).
-   Shared with the finale module: import or replicate exactly.
+   Heliocam type + layout tokens (landing/DESIGN_TYPE.md), palette v4 (landing/DESIGN_V4.md).
    ===================================================================== */
 :root {
   /* colour */
-  --ink: #070910;
-  --ink-rgb: 7, 9, 16;
+  --ink: #05060b;
+  --ink-rgb: 5, 6, 11;
+  --sky: #0b1030;
+  --horizon: #1b2a66;
   --text: #eef3ff;
   --muted: rgba(238, 243, 255, 0.68);
   --faint: rgba(238, 243, 255, 0.45);
   --frost-55: rgba(238, 243, 255, 0.55);
   --surface: #0d1016;
-  --halftone: #ede8e0; /* warm white dots, monochrome art */
-  --gemini: #4c8dff; /* AI marks only */
+  --sun-core: #fff4e0; /* the light source */
+  --sun: #ffc37a;
+  --sun-rgb: 255, 195, 122;
+  --ember: #ff8a3d;
+  --gemini: #4c8dff; /* what the AI or the sensor does */
+  --gemini-glow: #7fb2ff;
   --gemini-rgb: 76, 141, 255;
-  --violet: #9a7cf6; /* logo + favicon only */
+  --violet: #9a7cf6; /* the heliotrope petals only */
   --glow: rgba(238, 243, 255, 0.06); /* neutral soft light behind devices */
   --red: #e5484d; /* the mic only */
 
   /* type scale: size / weight / tracking / line height */
   --font: 'Google Sans Flex', sans-serif;
+  --font-code: 'Google Sans Code', ui-monospace, monospace; /* code chips only */
   --t-display: clamp(88px, 11vw, 168px);
   --t-display-w: 700;
   --t-display-tr: -0.045em;
@@ -228,94 +234,115 @@ main { position: relative; z-index: 1; overflow-x: clip; }
 
 /* ---------------- full-bleed art layers (feathered, never boxed) ---------------- */
 
-.fx { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
-.fx canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.fx > .scene-mount { position: absolute; inset: 0; opacity: 0; transition: opacity 1.4s var(--ease); }
-/* Palette v2: full-bleed halftone scenes render monochrome, warm-white dots on ink. */
-.fx > .scene-mount { filter: grayscale(1) sepia(0.12) brightness(1.22); }
-.fx > .scene-mount.is-in { opacity: 1; }
-
-/* Section art bleeds past its section and feathers into the neighbours; scroll parallax. */
-.fx--art {
-  inset: -14vh 0;
-  transform: translate3d(0, calc(var(--sp, 0) * 8vh), 0);
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 26%, #000 74%, transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0%, #000 26%, #000 74%, transparent 100%);
-}
-
-/* Live coaching: static dithered heliotropes, drifting slowly, pooled behind the phone. */
-.fx--coach {
-  -webkit-mask-image:
-    linear-gradient(to bottom, transparent 0%, #000 26%, #000 74%, transparent 100%),
-    radial-gradient(50% 60% at 30% 52%, #000 15%, transparent 100%);
-  -webkit-mask-composite: source-in;
-  mask-image:
-    linear-gradient(to bottom, transparent 0%, #000 26%, #000 74%, transparent 100%),
-    radial-gradient(50% 60% at 30% 52%, #000 15%, transparent 100%);
-  mask-composite: intersect;
-}
-.art-img {
-  position: absolute;
-  inset: -6%;
-  background: center / cover no-repeat;
-  opacity: 0.42;
-  animation: drift 56s ease-in-out infinite alternate;
-  will-change: transform;
-}
-@keyframes drift {
-  from { transform: scale(1.04) translate3d(-1.6%, 0.8%, 0); }
-  to { transform: scale(1.12) translate3d(1.6%, -1.4%, 0); }
-}
-
-.fx--voice {
-  inset: 0;
-  transform: none;
-  -webkit-mask-image:
-    linear-gradient(to bottom, transparent 0%, #000 22%, #000 78%, transparent 100%),
-    radial-gradient(54% 58% at 30% 50%, #000 20%, transparent 100%);
-  -webkit-mask-composite: source-in;
-  mask-image:
-    linear-gradient(to bottom, transparent 0%, #000 22%, #000 78%, transparent 100%),
-    radial-gradient(54% 58% at 30% 50%, #000 20%, transparent 100%);
-  mask-composite: intersect;
-}
-.fx--voice .art-img { opacity: 0.3; }
-
-/* ---------------- hero: exactly one viewport ---------------- */
+/* ---------------- hero: exactly one viewport, the 3D heliotrope behind the copy ---------------- */
 
 .hero {
   height: 100vh;
   height: 100svh;
   padding: 0;
   display: grid;
+  overflow: hidden;
 }
-.fx--hero {
-  inset: 0 0 -22vh 0;
-  transform: translate3d(0, calc(max(var(--sp, 0), 0) * 12vh), 0);
-  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 60%, rgba(0, 0, 0, 0.5) 80%, transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 0%, #000 60%, rgba(0, 0, 0, 0.5) 80%, transparent 100%);
+.hero__stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: radial-gradient(120% 90% at 78% 18%, var(--horizon) 0%, var(--sky) 38%, var(--ink) 78%);
+  transform: translate3d(0, calc(max(var(--sp, 0), 0) * 10vh), 0);
 }
+.hero__stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .hero__scrim {
   position: absolute;
-  inset: 0 0 -22vh 0;
+  inset: 0;
   z-index: 0;
   pointer-events: none;
   background:
-    linear-gradient(90deg, rgba(var(--ink-rgb), 0.7) 0%, rgba(var(--ink-rgb), 0.38) 34%, rgba(var(--ink-rgb), 0) 58%),
-    linear-gradient(to bottom, rgba(var(--ink-rgb), 0) 62%, var(--ink) 100%);
+    linear-gradient(90deg, rgba(var(--ink-rgb), 0.62) 0%, rgba(var(--ink-rgb), 0.3) 34%, rgba(var(--ink-rgb), 0) 56%),
+    linear-gradient(to bottom, rgba(var(--ink-rgb), 0) 70%, var(--ink) 100%);
 }
-.hero__grid { height: 100%; padding-block: clamp(32px, 6vh, 72px); }
-.hero__copy { align-self: center; }
-.hero__lede { margin-top: var(--r-h2-lede); }
-.hero__powered { margin-top: 32px; }
-.hero__media {
-  height: 100%;
-  min-height: 0;
-  align-items: center;
-  justify-content: flex-end;
-  padding-inline-end: clamp(0px, 4vw, 48px);
+.hero__grid { position: relative; z-index: 1; height: 100%; padding-block: clamp(32px, 6vh, 72px); pointer-events: none; }
+.hero__copy { align-self: center; pointer-events: auto; }
+.hero .display { text-shadow: 0 2px 60px rgba(var(--ink-rgb), 0.6); }
+.hero__lede { margin-top: var(--r-h2-lede); color: var(--text); max-width: 26ch; }
+.hero__sub {
+  margin-top: 16px;
+  max-width: 40ch;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--muted);
 }
-.hero .phone { height: min(70svh, 700px); }
+.hero__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 32px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.hero__badges li {
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  background: rgba(238, 243, 255, 0.04);
+  box-shadow: inset 0 0 0 1px rgba(238, 243, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+.hero__badges li:nth-child(2) { box-shadow: inset 0 0 0 1px rgba(var(--gemini-rgb), 0.4), 0 0 22px -10px rgba(var(--gemini-rgb), 0.6); }
+.hero__badges li:nth-child(3) {
+  box-shadow: inset 0 0 0 1px rgba(var(--gemini-rgb), 0.6), 0 0 28px -8px rgba(var(--gemini-rgb), 0.75);
+  background: linear-gradient(100deg, rgba(var(--gemini-rgb), 0.16), rgba(154, 124, 246, 0.12));
+}
+.hero__cue {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  bottom: 28px;
+  width: 22px;
+  height: 36px;
+  margin-left: -11px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1.5px rgba(238, 243, 255, 0.28);
+}
+.hero__cue i {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  width: 3px;
+  height: 7px;
+  margin-left: -1.5px;
+  border-radius: 3px;
+  background: var(--sun-core);
+  box-shadow: 0 0 10px var(--sun);
+  animation: cue 2.2s var(--ease) infinite;
+}
+@keyframes cue {
+  0% { transform: translateY(0); opacity: 0; }
+  20% { opacity: 1; }
+  80% { transform: translateY(12px); opacity: 0; }
+  100% { opacity: 0; }
+}
+
+/* ---------------- coach: the phone screen is the light source ---------------- */
+
+.section--coach { overflow: clip; }
+.coach-light {
+  position: absolute;
+  inset: -12vh 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(34% 46% at 30% 50%, rgba(var(--gemini-rgb), 0.16), rgba(var(--gemini-rgb), 0.04) 55%, transparent 80%),
+    radial-gradient(60% 40% at 30% 92%, rgba(var(--gemini-rgb), 0.08), transparent 70%),
+    conic-gradient(from 200deg at 30% 6%, transparent 0deg, rgba(var(--sun-rgb), 0.05) 12deg, transparent 26deg, rgba(var(--sun-rgb), 0.035) 38deg, transparent 52deg);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 22%, #000 78%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 22%, #000 78%, transparent 100%);
+}
+.media-right .coach-light { transform: scaleX(-1); }
+.trace-host { margin-top: var(--r-lede-steps); width: 100%; max-width: 520px; }
 
 /* ---------------- phone: bezel PNG over a scene box scaled into its screen rect ---------------- */
 
@@ -330,7 +357,7 @@ main { position: relative; z-index: 1; overflow-x: clip; }
   height: 120%;
   transform: translate(-50%, -50%);
   pointer-events: none;
-  background: radial-gradient(closest-side, var(--glow), rgba(238, 243, 255, 0.02) 52%, transparent);
+  background: radial-gradient(closest-side, rgba(var(--gemini-rgb), 0.14), rgba(var(--gemini-rgb), 0.03) 52%, transparent);
   filter: blur(8px);
 }
 .phone {
@@ -358,33 +385,6 @@ main { position: relative; z-index: 1; overflow-x: clip; }
   user-select: none;
 }
 
-/* ---------------- mac: plain ink, one faint feathered neutral glow ---------------- */
-
-/* Ink veil over any neighbouring art that bleeds in, feathered at both edges. */
-.section--mac::before {
-  content: '';
-  position: absolute;
-  inset: -8vh 0;
-  z-index: 0;
-  pointer-events: none;
-  background: linear-gradient(to bottom, rgba(var(--ink-rgb), 0) 0%, var(--ink) 9vh, var(--ink) calc(100% - 12vh), rgba(var(--ink-rgb), 0) 100%);
-}
-
-.mac-glow {
-  position: absolute;
-  inset: -10vh 0;
-  z-index: 0;
-  pointer-events: none;
-  background: radial-gradient(44% 40% at 66% 50%, var(--glow), rgba(238, 243, 255, 0.02) 55%, transparent 80%);
-}
-.mac-stage { position: relative; width: 100%; min-width: 0; display: block; }
-.mac-stage:empty {
-  aspect-ratio: 16 / 10.4;
-  border-radius: 18px;
-  background: radial-gradient(80% 70% at 50% 45%, var(--glow), transparent 70%);
-  box-shadow: inset 0 0 0 1px rgba(238, 243, 255, 0.06);
-}
-
 /* ---------------- showcase (src/showcase/ owns the layout once mounted) ---------------- */
 
 .showcase-host { position: relative; z-index: 1; }
@@ -400,8 +400,17 @@ main { position: relative; z-index: 1; overflow-x: clip; }
   align-items: center;
 }
 .section--voice > .container { opacity: 1; }
-/* The finale may reach up over its neighbour for a dissolve; never over voice. */
-#voice + #finale { --fn-overlap: 0px; margin-top: 0; }
+/* The mic is the light source: a red pool on the floor under it, soft rings when it listens. */
+.voice-light {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(26% 20% at 30% 52%, rgba(229, 72, 77, 0.2), rgba(229, 72, 77, 0.05) 60%, transparent 85%),
+    radial-gradient(40% 12% at 30% 74%, rgba(229, 72, 77, 0.12), transparent 75%);
+}
+.media-right .voice-light { transform: scaleX(-1); }
 .voice__stage { align-items: center; justify-content: center; min-height: 260px; }
 .mic {
   position: relative;
@@ -456,10 +465,12 @@ main { position: relative; z-index: 1; overflow-x: clip; }
   50% { transform: scaleY(var(--amp, 0.6)); }
 }
 
-/* ---------------- finale (module owns layout once mounted) ---------------- */
+/* ---------------- module hosts (each module owns its layout once mounted) ---------------- */
 
-.finale { position: relative; }
-.finale--placeholder { min-height: 100svh; display: grid; align-items: center; }
+.thesis-host, .lidar-host, .hood-host { position: relative; z-index: 1; }
+.footer-host { position: relative; display: block; }
+.section--plain { min-height: 60svh; display: grid; align-items: center; }
+.footer-plain { padding-block: 120px 48px; }
 
 /* ---------------- reveal: opacity + 16px rise, staggered ---------------- */
 
@@ -493,38 +504,22 @@ main { position: relative; z-index: 1; overflow-x: clip; }
   /* The token's 88px floor is wider than a 393px screen for the wordmark. */
   .display { font-size: min(var(--t-display), 21vw); }
 
-  .hero__grid {
-    grid-template-rows: auto minmax(0, 1fr);
-    row-gap: 32px;
-    padding-block: 56px 28px;
-    align-items: stretch;
-  }
-  .hero__copy { align-self: start; }
-  .hero__powered { margin-top: 20px; }
-  .hero__media { justify-content: center; padding-inline-end: 0; }
-  .hero .phone-wrap { height: 100%; }
-  .hero .phone { height: 100%; max-height: 62svh; }
+  .hero__grid { padding-block: 56px 72px; align-items: end; }
+  .hero__copy { align-self: end; }
+  .hero__badges { margin-top: 24px; }
   .hero__scrim {
-    background: linear-gradient(to bottom, rgba(var(--ink-rgb), 0.66) 0%, rgba(var(--ink-rgb), 0.3) 36%, rgba(var(--ink-rgb), 0) 60%, var(--ink) 100%);
+    background: linear-gradient(to bottom, rgba(var(--ink-rgb), 0) 0%, rgba(var(--ink-rgb), 0) 34%, rgba(var(--ink-rgb), 0.55) 62%, var(--ink) 100%);
   }
+  .coach-light, .voice-light { transform: none !important; }
 
   .phone { height: min(64svh, 560px); }
-  .fx--coach {
-    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 30%, #000 80%, transparent 100%);
-    mask-image: linear-gradient(to bottom, transparent 0%, #000 30%, #000 80%, transparent 100%);
-  }
-  .fx--voice {
-    -webkit-mask-image: radial-gradient(80% 40% at 50% 70%, #000 25%, transparent 100%);
-    mask-image: radial-gradient(80% 40% at 50% 70%, #000 25%, transparent 100%);
-  }
-  .mac-glow { background: radial-gradient(70% 34% at 50% 70%, var(--glow), transparent 80%); }
   .voice__stage { min-height: 160px; }
   .mic { width: min(320px, 82vw); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .fx--art, .fx--hero { transform: none; }
-  .art-img, .mic__wave i { animation: none; }
+  .hero__stage { transform: none; }
+  .mic__wave i, .hero__cue i { animation: none; }
   .rv, .rv-media { transform: none; transition: opacity 0.4s; }
 }

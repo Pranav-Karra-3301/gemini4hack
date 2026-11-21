@@ -1,14 +1,16 @@
-// Real-data showcase: "Sees in depth" -> "Edits with you".
-// One sticky, full-viewport stage inside a ~500vh track. Scroll drives four stages:
-//   1 the photo, full-bleed · 2 Depth Pro depth + scan line (2D canvas, ./shaders.js) ·
-//   3 the SHARP splat "memory" (3D canvas, ../memory3d/, after Wayback): it starts at the capture
-//     camera, identical to the photo, then pulls back and orbits ~25deg, frustum marking the frame ·
-//   4 Gemini's depth-aware light edit on the splat, fader pills, hold to compare.
-// Data: landing/public/showcase/ (IMG_1491 photo, Depth Pro map, people mask) and
-// landing/public/splats/img-1491.spz (loaded lazily as the section approaches).
+// Real-data showcase: "03 · After the shot", lighting by distance in 3D.
+// One sticky, full-viewport stage inside a ~400vh track. It opens on the photo from chapter 01 for
+// one beat (2D canvas, ./shaders.js), then scroll drives two stages:
+//   A the 3D scene rebuilt from the photo and its depth (3D canvas, ../memory3d/): it starts at the
+//     capture camera, identical to the photo, then pulls back and orbits ~25deg, frustum marking the
+//     frame. Drag to look around.
+//   B Gemini's light plan on that scene: three layers picked by distance from the camera (the people,
+//     the whole scene's warmth, the far background), fader pills, hold to compare.
+// Data: landing/public/showcase/ (IMG_1491 photo; the packed depth and people mask are fetched only
+// if the 3D scene cannot load) and landing/public/splats/img-1491.spz (loaded as the section nears).
 //
 //   import { mountShowcase } from './showcase/showcase.js';
-//   const { destroy } = mountShowcase(sectionEl, { heading: true });
+//   const { destroy } = mountShowcase(sectionEl, { heading: true, chapters: ['03 · After the shot'] });
 
 import './showcase.css';
 import { VERT, FRAG } from './shaders.js';
@@ -17,45 +19,33 @@ const BASE = (import.meta.env && import.meta.env.BASE_URL) || '/';
 const asset = (name) => `${BASE}showcase/${name}`;
 const SRC = {
   photo: asset('img-1491.webp'),
-  depth: asset('img-1491_depth.png'),
   packed: asset('img-1491_depth_packed.png'),
   mask: asset('img-1491_people.png'),
 };
-// Wayback's manifest entry for this photo (public/memories.json): SHARP splat + capture intrinsics.
+// The 3D scene for this photo (public/memories.json): splat + capture intrinsics.
 const MEMORY = { id: 'img-1491', file: `${BASE}splats/img-1491.spz`, frame: { w: 2978, h: 2234, f: 2236.9 } };
 
 const STAGES = [
   {
-    eyebrow: 'As shot',
-    title: 'The photo',
-    line: 'One frame from the coast, untouched.',
-    label: 'The original photo: three friends at a railing above the sea.',
+    eyebrow: 'Depth',
+    title: 'The shot, in 3D',
+    line: 'The photo and its depth, rebuilt as a scene you can turn. Drag to look around.',
+    label: 'The photo rebuilt in 3D from its depth, seen from beside the camera that took it.',
   },
   {
-    eyebrow: 'Depth Pro',
-    title: 'Depth Pro reads distance',
-    line: 'Every pixel gets a distance, from 2.5 m out to the sea.',
-    label: 'The Depth Pro depth map of the photo. Near is white, far is black.',
-  },
-  {
-    eyebrow: 'Memory',
-    title: 'Step inside the shot',
-    line: 'One photo becomes a 3D scene. Drag to look around.',
-    label: 'The photo rebuilt in 3D, seen from beside the camera that took it.',
-  },
-  {
-    eyebrow: 'Gemini',
-    title: 'Gemini edits by light',
-    line: 'Brighter faces, warmer light, a quieter sea.',
-    label: 'The 3D scene relit: the people brighter, the light warmer, the background dimmer.',
+    eyebrow: 'Edit for Me',
+    title: 'Gemini lights it by distance',
+    line: 'It picks layers by how far they are: the faces at 2.5 m lift, the warm light stays, the sea settles.',
+    label: 'The 3D scene relit by distance: the people brighter, the light warmer, the background dimmer.',
   },
 ];
-const STAGE_AT = [0, 0.16, 0.39, 0.74]; // progress where each stage starts
+const STAGE_AT = [0, 0.56]; // progress where each stage starts
 
+// The three layers Gemini sets, each by its distance from the camera.
 const FADERS = [
-  { name: 'People', target: 0.6, range: 1, digits: 1 },
-  { name: 'Warmth', target: 8, range: 20, digits: 0 },
-  { name: 'Background', target: -0.3, range: 1, digits: 1 },
+  { name: 'People', where: '2.5 m', target: 0.6, range: 1, digits: 1 },
+  { name: 'Warmth', where: 'whole scene', target: 8, range: 20, digits: 0 },
+  { name: 'Background', where: '20 m+', target: -0.3, range: 1, digits: 1 },
 ];
 
 const DEG = Math.PI / 180;
@@ -74,21 +64,16 @@ const fmt = (v, digits) => {
   const s = Math.abs(r).toFixed(digits);
   return r > 0 ? `+${s}` : r < 0 ? `−${s}` : s;
 };
-const fmtCount = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
 
 /** Scroll progress -> every visual parameter. Pure, so it is easy to reason about. */
 function stageParams(p) {
-  const scanT = clamp((p - 0.19) / 0.15);
   return {
-    depthMix: ss(0.12, 0.2, p) * (1 - ss(0.35, 0.405, p)),
-    scan: 1 - Math.pow(scanT, 2) * 0.93,
-    scanOn: ss(0.175, 0.2, p) * (1 - ss(0.33, 0.355, p)),
-    show3d: ss(0.405, 0.44, p), // the splat at the capture eye looks like the photo: a seamless swap
-    pull: easeInOut(clamp((p - 0.45) / 0.27)),
-    feather: 1 - ss(0.46, 0.56, p),
-    frustum: ss(0.5, 0.62, p),
-    edit: ss(0.74, 0.78, p),
-    stage: p < STAGE_AT[1] ? 0 : p < STAGE_AT[2] ? 1 : p < STAGE_AT[3] ? 2 : 3,
+    show3d: ss(0.06, 0.11, p), // the splat at the capture eye looks like the photo: a seamless swap
+    pull: easeInOut(clamp((p - 0.12) / 0.32)),
+    feather: 1 - ss(0.13, 0.25, p),
+    frustum: ss(0.2, 0.34, p),
+    edit: ss(STAGE_AT[1], STAGE_AT[1] + 0.04, p),
+    stage: p < STAGE_AT[1] ? 0 : 1,
   };
 }
 
@@ -105,16 +90,13 @@ function template(opts) {
   const pills = FADERS.map(
     (f, i) => `
       <div class="sc-pill" data-fader="${i}">
-        <span>${f.name}</span>
+        <span class="sc-pill-name">${f.name} <b>&middot;</b> <em>${f.where}</em></span>
         <span class="sc-pill-track"><i class="sc-pill-knob"></i></span>
         <output>${fmt(0, f.digits)}</output>
       </div>`,
   ).join('');
   const head = opts.heading
-    ? `<div class="sc-swap sc-head">
-        <div data-chapter="0"><p class="sc-eyebrow">${opts.chapters[0]}</p><h2 class="sc-h2">Sees in depth.</h2></div>
-        <div data-chapter="1" aria-hidden="true"><p class="sc-eyebrow">${opts.chapters[1]}</p><h2 class="sc-h2">Edits with you.</h2></div>
-      </div>`
+    ? `<div class="sc-head"><p class="sc-eyebrow">${opts.chapters[0]}</p><h2 class="sc-h2">Light by distance.</h2></div>`
     : '';
   return `
   <div class="sc-track">
@@ -131,14 +113,8 @@ function template(opts) {
         <ol class="sc-steps">${steps}</ol>
       </div>
       <div class="sc-bar">
-        <div class="sc-meta is-on">IMG_1491.jpg <b>&middot;</b> 2048 &times; 1536 <b>&middot;</b> as shot</div>
-        <div class="sc-legend" aria-hidden="true">
-          <span>Near <b>2.5 m</b></span>
-          <span class="sc-legend-bar"><i class="sc-legend-tick"></i></span>
-          <span>Far <b>the sea</b></span>
-        </div>
-        <div class="sc-hint"><span class="sc-hint-text">SHARP <b>&middot;</b> one photo to 3D</span></div>
-        <div class="sc-pills" aria-label="What Gemini changed">
+        <div class="sc-hint"><span class="sc-hint-text"></span></div>
+        <div class="sc-pills" aria-label="The layers Gemini set, by distance">
           ${pills}
           <button type="button" class="sc-pill sc-compare" aria-pressed="false">Hold to compare</button>
         </div>
@@ -148,7 +124,7 @@ function template(opts) {
 }
 
 // ------------------------------------------------------------------------------------------------
-// 2D GL (stages 1-2, and the fallback edit)
+// 2D GL (the opening photo, and the fallback edit if the 3D scene cannot load)
 
 function loadImage(src) {
   return new Promise((resolve, reject) => {
@@ -204,7 +180,7 @@ function createRenderer(canvas) {
   gl.bindVertexArray(vao);
 
   const U = {};
-  for (const n of ['uPhoto', 'uDepth', 'uMask', 'uRes', 'uTex', 'uDepthMix', 'uScan', 'uScanOn', 'uEdit', 'uFaders'])
+  for (const n of ['uPhoto', 'uDepth', 'uMask', 'uRes', 'uTex', 'uEdit', 'uFaders'])
     U[n] = gl.getUniformLocation(prog, n);
   gl.uniform1i(U.uPhoto, 0);
   gl.uniform1i(U.uDepth, 1);
@@ -223,7 +199,7 @@ function createRenderer(canvas) {
   };
 
   let texW = 1600, texH = 1200;
-  function upload({ photo, depth, mask }) {
+  function uploadPhoto(photo) {
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.BROWSER_DEFAULT_WEBGL);
     tex(0, true);
@@ -232,7 +208,11 @@ function createRenderer(canvas) {
     if (aniso) gl.texParameterf(gl.TEXTURE_2D, aniso.TEXTURE_MAX_ANISOTROPY_EXT, 4);
     texW = photo.naturalWidth;
     texH = photo.naturalHeight;
+  }
 
+  // Only for the fallback edit: distance (packed depth) and the people mask.
+  function uploadEdit({ depth, mask }) {
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     tex(1, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, depth.w, depth.h, 0, gl.RED, gl.FLOAT, depth.data);
 
@@ -242,14 +222,11 @@ function createRenderer(canvas) {
     gl.generateMipmap(gl.TEXTURE_2D);
   }
 
-  function draw(P, edit, faders) {
+  function draw(edit, faders) {
     const w = canvas.width, h = canvas.height;
     gl.viewport(0, 0, w, h);
     gl.uniform2f(U.uRes, w, h);
     gl.uniform2f(U.uTex, texW, texH);
-    gl.uniform1f(U.uDepthMix, P.depthMix);
-    gl.uniform1f(U.uScan, P.scan);
-    gl.uniform1f(U.uScanOn, P.scanOn);
     gl.uniform1f(U.uEdit, edit);
     gl.uniform3f(U.uFaders, faders[0], faders[1], faders[2]);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -259,7 +236,7 @@ function createRenderer(canvas) {
     gl.getExtension('WEBGL_lose_context')?.loseContext();
   }
 
-  return { gl, upload, draw, dispose };
+  return { gl, uploadPhoto, uploadEdit, draw, dispose };
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -267,7 +244,7 @@ function createRenderer(canvas) {
 export function mountShowcase(el, options = {}) {
   const opts = {
     heading: true,
-    chapters: ['02 · Depth', '03 · Edit'],
+    chapters: ['03 · After the shot'],
     ...options,
   };
   el.classList.add('sc');
@@ -281,13 +258,11 @@ export function mountShowcase(el, options = {}) {
   const canvas = $('.sc-canvas--2d');
   const canvas3d = $('.sc-canvas--3d');
   const feather = $('.sc-feather');
-  const tick = $('.sc-legend-tick');
   const hintText = $('.sc-hint-text');
   const compare = $('.sc-compare');
   const steps = [...track.querySelectorAll('.sc-step')];
   const ticks = [...track.querySelectorAll('.sc-ticks i')];
-  const chapters = [...track.querySelectorAll('[data-chapter]')];
-  const bars = [$('.sc-meta'), $('.sc-legend'), $('.sc-hint'), $('.sc-pills')];
+  const bars = { hint: $('.sc-hint'), pills: $('.sc-pills') };
   const pills = [...track.querySelectorAll('.sc-pill[data-fader]')].map((n) => ({
     el: n,
     out: n.querySelector('output'),
@@ -298,7 +273,8 @@ export function mountShowcase(el, options = {}) {
   let reduced = motionMQ.matches;
 
   let renderer = null;
-  let ready = false;
+  let ready = false; // the photo is on the 2D canvas
+  let flatEdit = null; // 'loading' | 'ready' | 'failed': depth + mask for the fallback edit
   let destroyed = false;
   let visible = false;
   let raf = 0;
@@ -307,7 +283,7 @@ export function mountShowcase(el, options = {}) {
   let target = 0;
   let cur = 0;
   let stage = -1;
-  let barIdx = 0;
+  let bar = null; // which of `bars` is showing
   let editOn = false;
   let comparing = false;
   let editMix = 1;
@@ -376,20 +352,37 @@ export function mountShowcase(el, options = {}) {
       else n.setAttribute('aria-hidden', 'true');
     });
     ticks.forEach((n, i) => n.classList.toggle('is-on', i <= s));
-    const ch = s === 3 ? 1 : 0;
-    chapters.forEach((n, i) => (i === ch ? n.removeAttribute('aria-hidden') : n.setAttribute('aria-hidden', 'true')));
     media.setAttribute('aria-label', STAGES[s].label);
-    if (s !== barIdx) {
-      bars[barIdx].classList.remove('is-on');
-      bars[s].classList.add('is-on');
-      barIdx = s;
-    }
+  }
+
+  function setBar(key) {
+    if (key === bar) return;
+    if (bar) bars[bar].classList.remove('is-on');
+    if (key) bars[key].classList.add('is-on');
+    bar = key;
+  }
+
+  // The fallback edit needs distance and the people mask; fetch them only when it is needed.
+  function loadFlatEdit() {
+    if (flatEdit || !renderer || destroyed) return;
+    flatEdit = 'loading';
+    Promise.all([loadPackedDepth(SRC.packed), loadImage(SRC.mask)])
+      .then(([depth, mask]) => {
+        if (destroyed) return;
+        renderer.uploadEdit({ depth, mask });
+        flatEdit = 'ready';
+        invalidate();
+      })
+      .catch((err) => {
+        console.warn('[showcase] flat edit unavailable:', err);
+        flatEdit = 'failed';
+      });
   }
 
   // ---- 3D memory ---------------------------------------------------------------------------
   function load3d() {
     if (loading3d || failed3d || destroyed) return;
-    hintText.innerHTML = 'Loading the 3D memory';
+    hintText.innerHTML = 'Loading the 3D scene';
     loading3d = import('../memory3d/stage.js')
       .then(({ createMemoryStage }) => {
         if (destroyed) return null;
@@ -397,7 +390,7 @@ export function mountShowcase(el, options = {}) {
           def: MEMORY,
           onDirty: invalidate,
           onProgress: (e) => {
-            if (e.lengthComputable && !stage3d) hintText.innerHTML = `Loading the 3D memory <b>&middot;</b> ${Math.round((e.loaded / e.total) * 100)}%`;
+            if (e.lengthComputable && !stage3d) hintText.innerHTML = `Loading the 3D scene <b>&middot;</b> ${Math.round((e.loaded / e.total) * 100)}%`;
           },
         });
         sizeCanvases(st);
@@ -409,15 +402,16 @@ export function mountShowcase(el, options = {}) {
         if (import.meta.env?.DEV) window.__showcase3d = { st, invalidate };
         const m = st.memory;
         console.info('[showcase] memory ready', { splats: m.count, median: m.median, quantiles: m.quantiles });
-        hintText.innerHTML = `SHARP <b>&middot;</b> ${fmtCount(m.count)} gaussians <b>&middot;</b> drag to look around`;
+        hintText.textContent = 'Drag to look around';
         el.classList.add('has-3d');
         invalidate();
       })
       .catch((err) => {
-        console.warn('[showcase] 3D memory unavailable, staying flat:', err);
+        console.warn('[showcase] 3D scene unavailable, staying flat:', err);
         failed3d = true;
         canvas3d.remove();
-        hintText.innerHTML = 'SHARP <b>&middot;</b> one photo to 3D';
+        hintText.textContent = '';
+        loadFlatEdit();
         invalidate();
       });
   }
@@ -438,6 +432,10 @@ export function mountShowcase(el, options = {}) {
 
     const P = stageParams(cur);
     setStage(P.stage);
+    // Stage A: the load progress, then "Drag to look around" once the 3D scene is on screen.
+    // Stage B: the layer pills. Nothing during the photo beat or if the 3D scene failed.
+    setBar(P.stage === 1 ? 'pills' : stage3d ? (P.show3d > 0.5 ? 'hint' : null) : failed3d ? null : 'hint');
+    if (P.stage === 1 && !stage3d) loadFlatEdit(); // still loading or failed: the photo carries the edit
 
     const wantEdit = editOn ? P.edit > 0.3 : P.edit > 0.6;
     if (wantEdit !== editOn) {
@@ -451,10 +449,7 @@ export function mountShowcase(el, options = {}) {
     const mixTo = comparing ? 0 : 1;
     editMix = reduced ? mixTo : approach(editMix, mixTo, 14, dt);
 
-    tick.style.left = `${((1 - P.scan) / 0.93) * 100}%`;
-    tick.style.opacity = String(P.scanOn);
-
-    // 3D: shown once loaded and the scroll reaches stage 3. Until then the flat photo holds.
+    // 3D: shown once loaded and the photo beat is over. Until then the flat photo holds.
     let anim3d = false;
     const want3d = stage3d ? P.show3d : 0;
     shown3d = want3d;
@@ -485,8 +480,7 @@ export function mountShowcase(el, options = {}) {
 
     // 2D draws whenever it can be seen: under the 3D crossfade, or as the fallback edit.
     if (ready && shown3d < 1) {
-      const flatEdit = stage3d ? 0 : P.edit * editMix;
-      renderer.draw(P, flatEdit, faders);
+      renderer.draw(stage3d || flatEdit !== 'ready' ? 0 : P.edit * editMix, faders);
     }
 
     if (cur !== target || busy || anim3d || editMix !== mixTo) invalidate();
@@ -592,6 +586,7 @@ export function mountShowcase(el, options = {}) {
   );
   ioLoad.observe(track);
 
+  let rigSy = null; // the 3D rig's own vertical slide, kept for landscape
   function sizeCanvases(st = stage3d) {
     const r = media.getBoundingClientRect();
     const cw = Math.max(1, Math.round(r.width));
@@ -603,6 +598,11 @@ export function mountShowcase(el, options = {}) {
       canvas.width = w;
       canvas.height = h;
     }
+    if (st) {
+      // Portrait: the captions sit at the bottom, so slide the pulled-back scene up to keep the people clear.
+      rigSy ??= st.rig.sy;
+      st.rig.sy = cw / ch < 0.75 ? -0.16 : rigSy;
+    }
     // 1.2M splats: Wayback's 1.5x cap keeps the fill rate sane on retina screens.
     st?.resize(cw, ch, Math.min(window.devicePixelRatio || 1, 1.5));
     invalidate();
@@ -610,22 +610,13 @@ export function mountShowcase(el, options = {}) {
   const ro = new ResizeObserver(() => sizeCanvases());
   ro.observe(media);
 
-  // ---- fallback (no WebGL2): plain images, photo <-> depth by stage -------------------------
-  let cleanupFallback = null;
+  // ---- fallback (no WebGL2): the plain photo ----------------------------------------------
   function mountFallback() {
     canvas.remove();
     const fb = document.createElement('div');
     fb.className = 'sc-fallback';
-    fb.innerHTML = `<img alt="" src="${SRC.photo}"><img alt="" src="${SRC.depth}" style="opacity:0">`;
+    fb.innerHTML = `<img alt="" src="${SRC.photo}">`;
     media.insertBefore(fb, media.firstChild);
-    const depthImg = fb.lastElementChild;
-    const sync = () => {
-      depthImg.style.opacity = steps[1].classList.contains('is-active') ? '1' : '0';
-    };
-    const obs = new MutationObserver(sync);
-    obs.observe(steps[1], { attributes: true, attributeFilter: ['class'] });
-    sync();
-    cleanupFallback = () => obs.disconnect();
   }
 
   // ---- boot --------------------------------------------------------------------------------
@@ -640,10 +631,10 @@ export function mountShowcase(el, options = {}) {
   } else {
     canvas.addEventListener('webglcontextlost', (e) => e.preventDefault());
     canvas3d.addEventListener('webglcontextlost', (e) => e.preventDefault());
-    Promise.all([loadImage(SRC.photo), loadPackedDepth(SRC.packed), loadImage(SRC.mask)])
-      .then(([photo, depth, mask]) => {
+    loadImage(SRC.photo)
+      .then((photo) => {
         if (destroyed) return;
-        renderer.upload({ photo, depth, mask });
+        renderer.uploadPhoto(photo);
         ready = true;
         el.classList.add('is-ready');
         invalidate();
@@ -668,7 +659,6 @@ export function mountShowcase(el, options = {}) {
       io.disconnect();
       ioLoad.disconnect();
       ro.disconnect();
-      cleanupFallback?.();
       renderer?.dispose();
       stage3d?.dispose();
       track.remove();

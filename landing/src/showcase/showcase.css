@@ -1,14 +1,15 @@
 /* =====================================================================
-   Showcase: "Sees in depth" -> "Edits with you" (real data).
+   Showcase: "03 · After the shot", lighting by distance in 3D (real data).
    One sticky, full-viewport stage: edge to edge, no frame. Captions sit
-   on the left over a soft dark gradient. Tokens follow landing/DESIGN_TYPE.md
-   (palette v2: monochrome + Gemini blue for AI marks only). Every token has
-   a fallback so the module also works on a page that does not load style.css.
+   on the left over a soft dark gradient. Type follows landing/DESIGN_TYPE.md,
+   palette landing/DESIGN_V4.md (night ink, Gemini blue only for what the
+   AI does). Every token has a fallback so the module also works on a page
+   that does not load style.css.
    ===================================================================== */
 
 .sc {
-  --sc-ink: var(--ink, #070910);
-  --sc-surface: #0d1016;
+  --sc-ink: var(--ink, #05060b);
+  --sc-ink-rgb: 5, 6, 11;
   --sc-text: var(--text, #eef3ff);
   --sc-muted: var(--muted, rgba(238, 243, 255, 0.68));
   --sc-faint: var(--faint, rgba(238, 243, 255, 0.45));
@@ -26,7 +27,7 @@
 
 .sc-track {
   position: relative;
-  height: 500vh;
+  height: 400vh; /* 300vh of scroll: photo beat + 3D ~170vh, the relight ~130vh (STAGE_AT in showcase.js) */
 }
 
 .sc-sticky {
@@ -35,7 +36,7 @@
   height: 100vh;
   height: 100svh;
   overflow: hidden;
-  background: #000;
+  background: var(--sc-ink);
   isolation: isolate;
 }
 
@@ -50,8 +51,8 @@
   height: 9vh;
   pointer-events: none;
 }
-.sc-sticky::before { top: 0; background: linear-gradient(var(--sc-ink), rgba(7, 9, 16, 0)); }
-.sc-sticky::after { bottom: 0; background: linear-gradient(rgba(7, 9, 16, 0), var(--sc-ink)); }
+.sc-sticky::before { top: 0; background: linear-gradient(var(--sc-ink), rgba(var(--sc-ink-rgb), 0)); }
+.sc-sticky::after { bottom: 0; background: linear-gradient(rgba(var(--sc-ink-rgb), 0), var(--sc-ink)); }
 
 /* ---------------- media: two full-bleed canvases ---------------- */
 
@@ -88,14 +89,14 @@
   transition: opacity 500ms var(--sc-ease);
 }
 
-/* the photo's edges feather into black (fades out as the 3D view pulls back) */
+/* the photo's edges feather into the ink (fades out as the 3D view pulls back) */
 .sc-feather {
   position: absolute;
   inset: 0;
   pointer-events: none;
   background:
-    linear-gradient(90deg, #000 0, rgba(0, 0, 0, 0) 9%, rgba(0, 0, 0, 0) 91%, #000 100%),
-    linear-gradient(180deg, #000 0, rgba(0, 0, 0, 0) 13%, rgba(0, 0, 0, 0) 87%, #000 100%);
+    linear-gradient(90deg, var(--sc-ink) 0, rgba(var(--sc-ink-rgb), 0) 9%, rgba(var(--sc-ink-rgb), 0) 91%, var(--sc-ink) 100%),
+    linear-gradient(180deg, var(--sc-ink) 0, rgba(var(--sc-ink-rgb), 0) 13%, rgba(var(--sc-ink-rgb), 0) 87%, var(--sc-ink) 100%);
 }
 
 /* the caption's soft dark gradient */
@@ -105,8 +106,8 @@
   z-index: 1;
   pointer-events: none;
   background:
-    linear-gradient(90deg, rgba(0, 0, 0, 0.74) 0, rgba(0, 0, 0, 0.5) 24%, rgba(0, 0, 0, 0.16) 44%, rgba(0, 0, 0, 0) 60%),
-    linear-gradient(0deg, rgba(0, 0, 0, 0.55) 0, rgba(0, 0, 0, 0) 22%);
+    linear-gradient(90deg, rgba(var(--sc-ink-rgb), 0.74) 0, rgba(var(--sc-ink-rgb), 0.5) 24%, rgba(var(--sc-ink-rgb), 0.16) 44%, rgba(var(--sc-ink-rgb), 0) 60%),
+    linear-gradient(0deg, rgba(var(--sc-ink-rgb), 0.55) 0, rgba(var(--sc-ink-rgb), 0) 22%);
 }
 
 /* ---------------- captions (left) ---------------- */
@@ -132,16 +133,13 @@
   color: var(--sc-eyebrow);
 }
 
-.sc-swap,
 .sc-steps {
   display: grid;
 }
-.sc-swap > *,
 .sc-step {
   grid-area: 1 / 1;
   transition: opacity 420ms var(--sc-ease), transform 420ms var(--sc-ease);
 }
-.sc-swap > [aria-hidden='true'],
 .sc-step[aria-hidden='true'] {
   opacity: 0;
   transform: translateY(8px);
@@ -196,14 +194,14 @@
   color: var(--sc-muted);
 }
 
-/* ---------------- bottom bar: meta / legend / hint / pills ---------------- */
+/* ---------------- bottom bar: hint / layer pills ---------------- */
 
 .sc-bar {
   position: absolute;
   z-index: 4;
   left: 50%;
   bottom: max(28px, 5vh);
-  width: min(100% - 2 * var(--sc-pad), 760px);
+  width: min(100% - 2 * var(--sc-pad), 920px);
   height: 40px;
   transform: translateX(-50%);
 }
@@ -222,47 +220,22 @@
 .sc-bar > .is-on { opacity: 1; transform: none; }
 .sc-bar > .sc-pills.is-on { pointer-events: auto; }
 
-.sc-meta,
-.sc-legend,
 .sc-hint {
   font-size: var(--t-small, 13px);
   line-height: 1;
   color: var(--sc-faint);
   font-variant-numeric: tabular-nums;
 }
-.sc-meta b,
-.sc-legend b,
 .sc-hint b { font-weight: 600; color: var(--sc-muted); }
-
-.sc-legend-bar {
-  position: relative;
-  width: 140px;
-  height: 4px;
-  border-radius: 4px;
-  background: linear-gradient(90deg, #eef3ff, #6d7280 55%, #0a0c12);
-  box-shadow: inset 0 0 0 1px rgba(238, 243, 255, 0.08);
-}
-.sc-legend-tick {
-  position: absolute;
-  top: -5px;
-  left: 0;
-  width: 2px;
-  height: 14px;
-  margin-left: -1px;
-  border-radius: 2px;
-  background: var(--sc-blue);
-  box-shadow: 0 0 8px rgba(var(--sc-blue-rgb), 0.9);
-  transition: opacity 200ms linear;
-}
 
 .sc-pill {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   height: 36px;
   padding: 0 14px;
   border-radius: 999px;
-  background: rgba(13, 16, 22, 0.72);
+  background: rgba(var(--sc-ink-rgb), 0.72);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
   box-shadow: inset 0 0 0 1px rgba(238, 243, 255, 0.1);
@@ -273,6 +246,14 @@
   white-space: nowrap;
   transition: box-shadow 280ms var(--sc-ease), color 280ms var(--sc-ease), background-color 200ms var(--sc-ease);
 }
+/* the layer and its distance from the camera */
+.sc-pill-name b { font-weight: 400; color: var(--sc-faint); }
+.sc-pill-name em {
+  font-style: normal;
+  color: var(--sc-faint);
+  font-variant-numeric: tabular-nums;
+  transition: color 280ms var(--sc-ease);
+}
 .sc-pill output {
   min-width: 3.2ch;
   font-weight: 600;
@@ -282,7 +263,7 @@
 }
 .sc-pill-track {
   position: relative;
-  width: 44px;
+  width: 34px;
   height: 2px;
   border-radius: 2px;
   background: rgba(238, 243, 255, 0.14);
@@ -308,15 +289,18 @@
   background: var(--sc-text);
   transition: background-color 280ms var(--sc-ease), box-shadow 280ms var(--sc-ease);
 }
+/* Gemini moving a layer: a matte blue glow from inside the pill, no outer bloom */
 .sc-pill.is-moving {
   color: var(--sc-text);
+  background-color: rgba(var(--sc-blue-rgb), 0.1);
   box-shadow:
-    inset 0 0 0 1px rgba(var(--sc-blue-rgb), 0.75),
-    0 0 22px -2px rgba(var(--sc-blue-rgb), 0.45);
+    inset 0 0 0 1px rgba(var(--sc-blue-rgb), 0.55),
+    inset 0 0 16px rgba(var(--sc-blue-rgb), 0.3);
 }
+.sc-pill.is-moving .sc-pill-name em { color: var(--sc-muted); }
 .sc-pill.is-moving .sc-pill-knob {
   background: var(--sc-blue);
-  box-shadow: 0 0 10px rgba(var(--sc-blue-rgb), 0.9);
+  box-shadow: 0 0 6px rgba(var(--sc-blue-rgb), 0.5);
 }
 
 .sc-compare {
@@ -332,10 +316,10 @@
   -webkit-touch-callout: none;
   touch-action: none;
 }
-.sc-compare:hover { background: rgba(28, 32, 42, 0.82); }
+.sc-compare:hover { background: rgba(24, 28, 40, 0.82); }
 .sc-compare.is-held {
-  background: rgba(238, 243, 255, 0.94);
-  color: #0d1016;
+  background: rgba(238, 243, 255, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(238, 243, 255, 0.32);
 }
 .sc-compare:focus-visible {
   outline: none;
@@ -344,9 +328,14 @@
 
 /* ---------------- small screens ---------------- */
 
+/* the three layer pills plus compare need ~850px with their fader tracks */
+@media (max-width: 1023px) {
+  .sc-pill-track { display: none; }
+}
+
 @media (max-width: 767px) {
   .sc-shade {
-    background: linear-gradient(0deg, rgba(0, 0, 0, 0.82) 0, rgba(0, 0, 0, 0.55) 34%, rgba(0, 0, 0, 0) 60%);
+    background: linear-gradient(0deg, rgba(var(--sc-ink-rgb), 0.82) 0, rgba(var(--sc-ink-rgb), 0.55) 34%, rgba(var(--sc-ink-rgb), 0) 60%);
   }
   .sc-copy {
     top: auto;
@@ -360,19 +349,18 @@
   .sc-ticks { margin: 20px 0 14px; }
   .sc-bar { height: 76px; }
   .sc-bar > * { flex-wrap: wrap; align-content: flex-end; gap: 8px; }
-  .sc-pill { height: 32px; padding: 0 11px; }
+  .sc-pill { gap: 7px; height: 32px; padding: 0 10px; font-size: 12px; }
   .sc-pill-track { display: none; }
-  .sc-compare { margin-left: 0; }
+  .sc-pill output { min-width: 0; }
+  .sc-compare { min-width: 0; margin-left: 0; padding: 0 14px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sc-swap > *,
   .sc-step,
   .sc-bar > *,
   .sc-canvas,
   .sc-pill,
   .sc-pill-knob { transition-duration: 1ms; }
-  .sc-swap > [aria-hidden='true'],
   .sc-step[aria-hidden='true'],
   .sc-bar > * { transform: none; }
 }
