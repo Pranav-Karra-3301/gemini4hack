@@ -1,113 +1,69 @@
 import './style.css';
-import { PRODUCT, CHAPTERS, PHONE, THESIS, APP } from './config.js';
-import { ScenePlayer, StepTrack } from './scenes.js';
+import { PRODUCT, CHAPTERS, SCENES, GEMINI, TITLES } from './config.js';
+import { mountBackdrop, reducedMotion } from './unicorn.js';
+import { sectionTitle } from './title/title.js';
+import { mountLive } from './live/live.js';
+import { startSmoothScroll, scrollToY } from './scroll.js';
 
-// Each section's module is a guarded dynamic import. A missing or broken module never breaks
-// the build or the page: its section shows the plain copy instead.
+// Each section's module is a guarded import. A missing or broken module never breaks the build or
+// the page: its section shows its title instead. The heavy ones (WebGL, data) load when near, into
+// hosts that already hold their final height (style.css). Compare and the app gallery are plain DOM
+// whose height follows their content, so they are bundled (eager) and mount before the first paint.
 const MODULES = {
   hero: import.meta.glob('./hero/*.js'),
   lidar: import.meta.glob('./lidar/*.js'),
-  story: import.meta.glob('./story/*.js'),
+  compare: import.meta.glob('./compare/*.js', { eager: true }),
   showcase: import.meta.glob('./showcase/*.js'),
   looks: import.meta.glob('./looks/*.js'),
-  app: import.meta.glob('./app/*.js'),
+  app: import.meta.glob('./app/*.js', { eager: true }),
   footer: import.meta.glob('./footer/*.js'),
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
-const pad = (n) => String(n).padStart(2, '0');
-const pct = (a, b) => `${((a / b) * 100).toFixed(4)}%`;
+const clamp = (v) => Math.max(0, Math.min(1, v));
+const smooth = (t) => t * t * (3 - 2 * t);
+const easeOut = (t) => 1 - (1 - t) * (1 - t);
+const still = reducedMotion();
 
-document.title = `${PRODUCT.name}: ${PRODUCT.line.replace(/\.$/, '').replace(/^A /, 'a ')}`;
+document.title = `${PRODUCT.name}: ${PRODUCT.line.replace(/\.$/, '')}`;
 
 /* ---------- markup ---------- */
 
-// The screen rect of the bezel PNG, in % of the frame, so the scene is clipped exactly.
-const { frame: F, screen: S } = PHONE;
-const SCREEN_STYLE = [
-  `left:${pct(S.x, F.w)}`,
-  `top:${pct(S.y, F.h)}`,
-  `width:${pct(S.w, F.w)}`,
-  `height:${pct(S.h, F.h)}`,
-  `border-radius:${pct(S.r, S.w)} / ${pct(S.r, S.h)}`,
-].join(';');
-
-const phoneMarkup = () => `
-  <div class="phone-wrap rv-media">
-    <figure class="phone" style="aspect-ratio:${F.w} / ${F.h}">
-      <div class="phone__screen" style="${SCREEN_STYLE}">
-        <div class="phone__box" style="width:${PHONE.viewport.w}px;height:${PHONE.viewport.h}px" aria-hidden="true"></div>
-      </div>
-      <img class="phone__bezel" src="${PHONE.bezel}" alt="" draggable="false" decoding="async" />
-    </figure>
-  </div>`;
-
-const stepsMarkup = (steps) =>
-  `<ol class="steps">${steps
-    .map((s, i) => `<li class="step"><span class="step__num">${pad(i + 1)}</span><span class="step__text">${s.text}</span></li>`)
-    .join('')}</ol>`;
-
-const headMarkup = (ch) => `
-    <p class="eyebrow">${pad(ch.n)} · ${ch.label}</p>
-    <h2 class="h2">${ch.title}</h2>
-    ${ch.lede ? `<p class="lede">${ch.lede}</p>` : ''}`;
-
-const copyMarkup = (ch) => `
-  <div class="col-text copy rv-group">
-    ${headMarkup(ch)}
-    ${ch.steps ? stepsMarkup(ch.steps) : ''}
-  </div>`;
-
-const MIC = `
-  <button class="mic" type="button" aria-label="Talk to Heliocam">
-    <svg class="mic__icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="8.5" y="3" width="7" height="12" rx="3.5"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3"/></svg>
-    <span class="mic__wave" aria-hidden="true">${'<i></i>'.repeat(17)}</span>
-  </button>`;
+// The Gemini sparkle: a four-point star with concave sides, blue into violet.
+const sparkle = (id) => `
+  <svg class="sparkle" viewBox="0 0 24 24" aria-hidden="true">
+    <defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4C8DFF"/><stop offset="1" stop-color="#9A7CF6"/></linearGradient></defs>
+    <path fill="url(#${id})" d="M12 0C12.6 6.4 17.6 11.4 24 12C17.6 12.6 12.6 17.6 12 24C11.4 17.6 6.4 12.6 0 12C6.4 11.4 11.4 6.4 12 0Z"/>
+  </svg>`;
 
 function sectionMarkup(ch) {
-  const side = `media-${ch.media || 'right'}`;
   switch (ch.kind) {
     case 'hero':
-      // The thesis is the hero (src/story/thesis.js, hero mode); the bar names the product.
+      // src/hero/ mountHero(el) owns this section; heroFallback() fills it until that module exists.
+      return `<section class="hero" id="${ch.id}"></section>`;
+    case 'gemini':
       return `
-      <section class="hero" id="${ch.id}">
-        <header class="container hero__bar">
-          <a class="hero__brand" href="#${ch.id}"><img src="/assets/ios-AppIcon-1024.png" alt="" width="30" height="30" decoding="async" />${PRODUCT.name}</a>
-          <ul class="hero__badges" aria-label="Runs on">${PRODUCT.badges.map((b) => `<li>${b}</li>`).join('')}</ul>
-        </header>
-        <div class="hero__thesis"></div>
-        <a class="hero__cue" href="#lidar" aria-label="Scroll down"><i></i></a>
+      <section class="gemini" id="${ch.id}" aria-label="${GEMINI.label}">
+        <div class="gemini__stage">
+          <div class="backdrop gemini__backdrop" aria-hidden="true"><div class="backdrop__css gemini__light"><i class="gemini__line"></i></div></div>
+          <p class="gemini__brand">${sparkle('sparkle-gemini')}<span>${GEMINI.label}</span></p>
+          <ul class="gemini__models">
+            ${GEMINI.models.map((m) => `<li class="gemini__model" style="--c:${m.color}"><span class="gemini__id">${m.id}</span><span class="gemini__role">${m.role}</span><i></i></li>`).join('')}
+          </ul>
+        </div>
       </section>`;
     case 'lidar':
-      return `<section class="lidar-host" id="${ch.id}" aria-label="${ch.copy.title}"></section>`;
-    case 'coach':
-      return `
-      <section class="section section--phone section--coach ${side}" id="${ch.id}">
-        <div class="coach-light" aria-hidden="true"></div>
-        <div class="container grid">
-          <div class="col-text copy rv-group">
-            ${headMarkup(ch)}
-            <div class="trace-host" data-trace>${stepsMarkup(ch.trace.map((l) => ({ text: l.text })))}</div>
-          </div>
-          <div class="col-media">${phoneMarkup()}</div>
-        </div>
-      </section>`;
+      return `<section class="lidar-host" id="${ch.id}" aria-label="${TITLES.lidar}"></section>`;
+    case 'live':
+      return `<section class="live" id="${ch.id}" aria-label="Live"></section>`;
+    case 'compare':
+      return `<section class="compare-host" id="${ch.id}"></section>`;
     case 'showcase':
-      // The module owns this section's layout once mounted.
-      return `<section class="showcase-host" id="${ch.id}" aria-label="${ch.fallback.title}"></section>`;
+      return `<section class="showcase-host" id="${ch.id}" aria-label="${TITLES.after}"></section>`;
     case 'looks':
-      return `<section class="looks-host" id="${ch.id}" aria-label="${ch.title}"></section>`;
-    case 'voice':
-      return `
-      <section class="section section--voice ${side}" id="${ch.id}">
-        <div class="voice-light" aria-hidden="true"></div>
-        <div class="container grid">
-          ${copyMarkup(ch)}
-          <div class="col-media voice__stage rv-media">${MIC}</div>
-        </div>
-      </section>`;
+      return `<section class="looks-host" id="${ch.id}" aria-label="${TITLES.looks}"></section>`;
     case 'app':
-      return `<section class="app-host" id="${ch.id}" aria-label="${APP.title}"></section>`;
+      return `<section class="app-host" id="${ch.id}" aria-label="${TITLES.app}"></section>`;
     case 'footer':
       return `<footer class="footer-host" id="${ch.id}"></footer>`;
   }
@@ -120,28 +76,77 @@ $('#app').insertAdjacentHTML('afterend', sectionMarkup(CHAPTERS.at(-1)));
 const byId = (id) => document.getElementById(id);
 const chapter = (kind) => CHAPTERS.find((c) => c.kind === kind);
 
-/* ---------- scroll: parallax (--sp) and exit fade (--fade) per plain section ---------- */
+/* ---------- hero: src/hero/ mountHero(el) once it exists, else the wordmark over v5-hero ---------- */
 
-// p: -1 as a section enters from below, 0 when centred, 1 once it has left at the top.
-function sectionProgress(el, vh) {
-  const r = el.getBoundingClientRect();
-  if (r.bottom < -vh * 0.5 || r.top > vh * 1.5) return null;
-  return Math.max(-1, Math.min(1, (vh / 2 - (r.top + r.height / 2)) / ((vh + r.height) / 2)));
+const hero = byId('top');
+let renderHero = null; // set by the fallback: the iris closes a little as you scroll away
+
+// The fallback hero: an iris opens on the sparkle on load, with the wordmark and tagline under it.
+function heroFallback(el) {
+  el.classList.add('hero--fallback');
+  el.innerHTML = `
+    <div class="backdrop hero__backdrop" aria-hidden="true"><div class="backdrop__css hero__light"><i></i>${sparkle('sparkle-hero')}</div></div>
+    <div class="hero__title">
+      <h1 class="hero__mark">${PRODUCT.name}</h1>
+      <p class="hero__line">${PRODUCT.line}</p>
+    </div>`;
+  let intro = still ? 1 : 0;
+  let introStart = 0;
+  let scene = null;
+  const render = () => {
+    const away = still ? 0 : smooth(clamp(scrollY / Math.max(1, el.offsetHeight)));
+    const open = intro * (1 - 0.4 * away);
+    scene?.setVar('open', open);
+    el.style.setProperty('--open', open.toFixed(3));
+  };
+  const frame = (now) => {
+    introStart ||= now;
+    intro = easeOut(clamp((now - introStart) / 2500));
+    render();
+    if (intro < 1) requestAnimationFrame(frame);
+    else renderHero = render;
+  };
+  // The iris opens once there is something to see: the scene drawing, or its CSS light.
+  let queued = false;
+  const start = () => {
+    if (queued) return;
+    queued = true;
+    if (still) {
+      render();
+      renderHero = render;
+    } else requestAnimationFrame(frame);
+  };
+  scene = mountBackdrop($('.hero__backdrop', el), SCENES.hero, { vars: { open: intro }, onReady: start });
+  setTimeout(start, 2000);
 }
 
-const scrollers = [...document.querySelectorAll('.section')];
+// Mounted right away (not when near): it is the first screen.
+if (Object.keys(MODULES.hero).length) mountModule(hero, 'hero', 'mountHero', [], heroFallback);
+else heroFallback(hero);
+
+/* ---------- Gemini 4: the line draws, the "4" lights, then each model along the line ---------- */
+
+const gemini = byId('gemini');
+const geminiScene = mountBackdrop($('.gemini__backdrop', gemini), SCENES.gemini, { vars: { lit: still ? 1 : 0 } });
+const geminiChips = [...gemini.querySelectorAll('.gemini__models li')];
+function renderGemini(vh) {
+  const r = gemini.getBoundingClientRect();
+  if (r.bottom < -vh * 0.2 || r.top > vh * 1.2) return;
+  // 0 once the stage is mostly on screen, 1 just before the pin lets go.
+  const held = r.height - vh;
+  const lit = still ? 1 : clamp((vh * 0.2 - r.top) / (vh * 0.2 + held * 0.9));
+  geminiScene.setVar('lit', lit);
+  gemini.style.setProperty('--lit', lit.toFixed(3));
+  geminiChips.forEach((li, i) => li.classList.toggle('is-on', lit >= 0.5 + i * 0.1));
+}
+
+/* ---------- scroll ---------- */
+
 let scrollQueued = false;
 function onScrollFrame() {
   scrollQueued = false;
-  const vh = innerHeight;
-  scrollers.forEach((section) => {
-    const p = sectionProgress(section, vh);
-    if (p === null) return;
-    // Voice never fades: it must stay readable until it has fully left the screen.
-    const fade = section.id === 'voice' ? 1 : 1 - Math.min(1, Math.max(0, (p - 0.4) / 0.55));
-    section.style.setProperty('--sp', p.toFixed(4));
-    section.style.setProperty('--fade', (fade * fade * (3 - 2 * fade)).toFixed(3));
-  });
+  renderHero?.();
+  renderGemini(innerHeight);
 }
 const queueScroll = () => {
   if (scrollQueued) return;
@@ -152,6 +157,14 @@ addEventListener('scroll', queueScroll, { passive: true });
 addEventListener('resize', queueScroll);
 onScrollFrame();
 
+/* ---------- live loop ---------- */
+
+try {
+  mountLive(byId('live'));
+} catch (err) {
+  console.error('[live] failed to mount', err);
+}
+
 /* ---------- modules ---------- */
 
 async function loadExport(mods, dir, name) {
@@ -160,7 +173,7 @@ async function loadExport(mods, dir, name) {
     .sort((a, b) => Number(!a.endsWith(`/${dir}.js`)) - Number(!b.endsWith(`/${dir}.js`)));
   for (const k of keys) {
     try {
-      const m = await mods[k]();
+      const m = typeof mods[k] === 'function' ? await mods[k]() : mods[k];
       if (typeof m[name] === 'function') return m[name];
     } catch (err) {
       console.warn(`[${dir}] ${k} failed to load`, err);
@@ -182,178 +195,57 @@ function whenNear(el, fn) {
   io.observe(el);
 }
 
-// Mounts `name` from MODULES[group] into `el`. On failure, `fallback(el)` fills the section
-// with plain copy so the page still reads top to bottom.
+// Mounts `name` from MODULES[group] into `el`. On failure, `fallback(el)` fills the section.
+// A group with no files yet (a module still being built) is skipped quietly.
 async function mountModule(el, group, name, args = [], fallback) {
+  if (!Object.keys(MODULES[group]).length) return;
   const mount = await loadExport(MODULES[group], group, name);
   try {
     if (!mount) throw new Error('module not found');
     await mount(el, ...args);
     el.classList.add('is-mounted');
   } catch (err) {
-    console.warn(`[${group}] ${name} unavailable, showing plain copy:`, err);
-    if (fallback) {
-      fallback(el);
-      el.querySelectorAll('.rv-group').forEach(revealGroup);
-    }
+    console.warn(`[${group}] ${name} unavailable:`, err);
+    fallback?.(el);
   }
 }
 
-const plainSection = (inner) => (el) => {
-  el.classList.add('section', 'section--plain');
-  el.innerHTML = `<div class="container grid"><div class="col-text copy rv-group">${inner}</div></div>`;
+// A section whose module fails keeps its title.
+const titleOnly = (text) => (el) => {
+  const box = document.createElement('div');
+  box.className = 'container';
+  box.append(sectionTitle(text));
+  el.classList.add('section--plain');
+  el.replaceChildren(box);
 };
 
-// Hero: the thesis, mounted right away; it is the first thing on screen.
-mountModule($('.hero__thesis'), 'story', 'mountThesis', [{ hero: true, sub: PRODUCT.sub }], (el) => {
-  el.innerHTML = `<div class="container hero__plain"><h1 class="h2">${THESIS.line.join(' ')}</h1><p class="lede">${PRODUCT.sub}</p></div>`;
-});
-
 whenNear(byId('lidar'), () => {
-  const ch = chapter('lidar');
-  mountModule(byId('lidar'), 'lidar', 'mountLidar', [ch.copy], plainSection(headMarkup({ n: ch.n, ...ch.copy, label: ch.copy.label.replace(/^\d+ · /, '') })));
+  mountModule(byId('lidar'), 'lidar', 'mountLidar', [chapter('lidar').copy], titleOnly(TITLES.lidar));
 });
 
-whenNear(byId('after'), () => {
-  const ch = chapter('showcase');
-  mountModule(byId('after'), 'showcase', 'mountShowcase', [{ chapters: [`${pad(ch.n)} · ${ch.fallback.label}`] }], plainSection(headMarkup({ n: ch.n, ...ch.fallback })));
-});
+mountModule(byId('compare'), 'compare', 'mountCompare');
+
+whenNear(byId('after'), () => mountModule(byId('after'), 'showcase', 'mountShowcase', [], titleOnly(TITLES.after)));
 
 whenNear(byId('looks'), () => {
-  const ch = chapter('looks');
-  mountModule(byId('looks'), 'looks', 'mountLooks', [ch], plainSection(headMarkup(ch)));
+  mountModule(byId('looks'), 'looks', 'mountLooks', [chapter('looks')], titleOnly(TITLES.looks));
 });
 
-whenNear(byId('in-app'), () => {
-  mountModule(byId('in-app'), 'app', 'mountApp', [], plainSection(`<p class="eyebrow">${APP.label}</p><h2 class="h2">${APP.title}</h2><p class="lede">${APP.lede}</p>`));
-});
+mountModule(byId('in-app'), 'app', 'mountApp', [], titleOnly(TITLES.app));
 
 whenNear(byId('footer'), () => {
   mountModule(byId('footer'), 'footer', 'mountFooter', [], (el) => {
-    el.innerHTML = `<div class="container footer-plain"><p class="display">${PRODUCT.name}</p><p class="small">Built with Gemini 4 · © 2026</p></div>`;
+    el.innerHTML = `<div class="container footer-plain"><p class="display">${PRODUCT.name}</p></div>`;
   });
 });
 
-/* ---------- coach: phone viewfinder + Gemini's agent trace ---------- */
+/* ---------- smooth scrolling (src/scroll.js); in-page links glide there through it ---------- */
 
-const VP = PHONE.viewport;
-const DPR = () => Math.min(window.devicePixelRatio || 1, 2);
-
-function setupCoach(ch) {
-  const section = byId(ch.id);
-  const screen = $('.phone__screen', section);
-  const box = $('.phone__box', screen);
-  let s = 1;
-  // Cover-fit the 393 x 852 box into the screen rect (aspects differ by < 0.3%).
-  new ResizeObserver(() => {
-    const w = screen.clientWidth;
-    const h = screen.clientHeight;
-    if (!w || !h) return;
-    s = Math.max(w / VP.w, h / VP.h);
-    box.style.transform = `translate(${((w - VP.w * s) / 2).toFixed(2)}px, ${((h - VP.h * s) / 2).toFixed(2)}px) scale(${s.toFixed(5)})`;
-  }).observe(screen);
-
-  // The trace module takes over the plain list once it loads; until then the list steps along.
-  const host = $('[data-trace]', section);
-  const steps = ch.trace.map((l, i) => ({ text: l.text, start: l.t, end: ch.trace[i + 1]?.t ?? ch.loop }));
-  let track = new StepTrack($('.steps', host), steps);
-  const proxy = { render: (t) => track.render(t), reset: () => track.reset() };
-  loadExport(MODULES.story, 'story', 'AgentTrace').then((AgentTrace) => {
-    if (!AgentTrace) return;
-    try {
-      host.replaceChildren();
-      track = new AgentTrace(host, ch);
-      host.classList.add('is-mounted');
-    } catch (err) {
-      console.warn('[story] AgentTrace failed, keeping the plain list', err);
-    }
-  });
-
-  const player = new ScenePlayer(box, ch.phone, {
-    track: proxy,
-    loop: ch.loop || 0,
-    // Render at the on-screen pixel density of the scaled box, never below 1.5.
-    options: () => ({ dpi: Math.min(3, Math.max(1.5, s * DPR() * 1.25)), scale: 1 }),
-  });
-
-  // Mount when the phone is on screen, destroy when it leaves, replay on re-entry.
-  let playing = false;
-  new IntersectionObserver(
-    ([e]) => {
-      if (e.isIntersecting && e.intersectionRatio >= 0.2 && !playing) {
-        playing = true;
-        player.play();
-      } else if (!e.isIntersecting && playing) {
-        playing = false;
-        player.stop();
-      }
-    },
-    { threshold: [0, 0.2] },
-  ).observe(screen);
-}
-setupCoach(chapter('coach'));
-
-/* ---------- voice: mic capsule + steps on a loop while in view ---------- */
-
-const mic = $('.mic');
-if (mic) {
-  let held = false;
-  const sync = (auto) => mic.classList.toggle('is-listening', held || auto);
-  mic.addEventListener('pointerdown', () => ((held = true), sync(false)));
-  ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) =>
-    mic.addEventListener(ev, () => ((held = false), sync(false))),
-  );
-  const bars = mic.querySelectorAll('.mic__wave i');
-  bars.forEach((b, i) => {
-    b.style.setProperty('--i', i);
-    b.style.setProperty('--amp', (0.28 + 0.62 * Math.sin((Math.PI * (i + 0.5)) / bars.length)).toFixed(2));
-  });
-
-  const ch = chapter('voice');
-  const section = byId(ch.id);
-  const list = $('.steps', section);
-  const track = list && ch.steps ? new StepTrack(list, ch.steps) : null;
-  let raf = 0;
-  let t0 = 0;
-  const tick = (now) => {
-    const t = ((now - t0) / 1000) % ch.loop;
-    track?.render(t);
-    if (ch.listen) sync(t >= ch.listen[0] && t < ch.listen[1]);
-    raf = requestAnimationFrame(tick);
-  };
-  new IntersectionObserver(
-    ([e]) => {
-      cancelAnimationFrame(raf);
-      if (e.isIntersecting) {
-        t0 = performance.now();
-        raf = requestAnimationFrame(tick);
-      } else {
-        track?.reset();
-        sync(false);
-      }
-    },
-    { threshold: 0.35 },
-  ).observe(section);
-}
-
-/* ---------- scroll reveal: opacity + 16px rise, staggered ---------- */
-
-// Reveal on entry; reset only once a group drops back below the fold, so scrolling up
-// never blanks what you just read but scrolling down again replays the motion.
-const revealer = new IntersectionObserver(
-  (entries) =>
-    entries.forEach((e) => {
-      if (e.isIntersecting) e.target.classList.add('is-in');
-      else if (e.boundingClientRect.top > 0) e.target.classList.remove('is-in');
-    }),
-  { threshold: 0.12, rootMargin: '0px 0px -6% 0px' },
-);
-function revealGroup(g) {
-  g.querySelectorAll('.display, .eyebrow, .h2, .h3, .lede, .step').forEach((el, i) => {
-    el.classList.add('rv');
-    el.style.setProperty('--i', i);
-  });
-  revealer.observe(g);
-}
-document.querySelectorAll('.rv-group').forEach(revealGroup);
-document.querySelectorAll('.rv-media').forEach((el) => revealer.observe(el));
+startSmoothScroll();
+document.addEventListener('click', (e) => {
+  const link = e.target.closest?.('a[href^="#"]');
+  const target = link && link.hash.length > 1 && document.getElementById(decodeURIComponent(link.hash.slice(1)));
+  if (!target) return;
+  e.preventDefault();
+  scrollToY(target.getBoundingClientRect().top + scrollY);
+});

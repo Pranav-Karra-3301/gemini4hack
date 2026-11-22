@@ -1,0 +1,246 @@
+/* The live loop (src/live/live.js): a pinned stage, one phone, a beat per model.
+   [data-beat] on .live picks what is lit: 0 hydrogen, 1 decision, 2 voice. Tokens come from
+   ../style.css :root; each element's --c is its model's colour (config.js MODELS). */
+
+.live {
+  position: relative;
+  height: 300svh;
+}
+.live__stage {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  min-height: 600px;
+  overflow: clip;
+  isolation: isolate;
+  display: grid;
+  place-items: center;
+}
+
+/* ---- the light behind the phone: the scene, or three round CSS lights that crossfade ---- */
+
+.live__backdrop { --fade-top: 22%; --fade-bottom: 22%; }
+.live__light > i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(96svh, 1000px);
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  opacity: 0;
+  transition: opacity 600ms var(--ease);
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--c) 40%, transparent), color-mix(in srgb, var(--c) 13%, transparent) 46%, transparent);
+}
+.live[data-beat='0'] .live__light > i:nth-child(1),
+.live[data-beat='1'] .live__light > i:nth-child(2),
+.live[data-beat='2'] .live__light > i:nth-child(3) { opacity: 1; }
+
+/* ---- one centered column: title, model chip, phone, output line, dots, one gap between each ---- */
+
+.live__center {
+  --gap: clamp(14px, 2.2svh, 24px);
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  width: 100%;
+  padding-inline: var(--container-pad);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--gap);
+}
+
+/* the section title: the shared type, centered on one line over the column (on a narrow phone
+   it may run a pixel or two into the side padding, evenly, rather than break) */
+.live__title { text-align: center; white-space: nowrap; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-code);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  font-variant-ligatures: none;
+}
+.chip > i {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow: 0 0 12px var(--c);
+}
+
+.live__models { display: grid; margin: 0; padding: 0; list-style: none; }
+/* what the model does, after its id: frost at 60%, behind a hairline */
+.chip__role {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font);
+  font-weight: 500;
+  color: rgba(238, 243, 255, 0.6);
+}
+.chip__role::before {
+  content: '';
+  width: 1px;
+  height: 0.95em;
+  margin-left: 4px;
+  background: rgba(238, 243, 255, 0.22);
+}
+.chip--model {
+  grid-area: 1 / 1;
+  justify-self: center;
+  color: var(--c);
+  opacity: 0;
+  transform: translate3d(0, 6px, 0);
+  transition: opacity 400ms var(--ease), transform 500ms var(--ease-out);
+}
+.live[data-beat='0'] .chip--model:nth-child(1),
+.live[data-beat='1'] .chip--model:nth-child(2),
+.live[data-beat='2'] .chip--model:nth-child(3) { opacity: 1; transform: none; transition-delay: 120ms; }
+
+/* ---- the phone ---- */
+
+.live__phone { height: min(60svh, 640px); }
+
+/* ---- the output line under the phone: the three beats stacked in one cell, crossfading ---- */
+
+.live__outs { display: grid; place-items: center; }
+.live__out {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75em;
+  margin: 0;
+  font-family: var(--font-code);
+  font-size: 19px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  font-variant-ligatures: none;
+  color: rgba(238, 243, 255, 0.78);
+  pointer-events: none;
+  opacity: 0;
+  transform: translate3d(0, 6px, 0);
+  transition: opacity 400ms var(--ease), transform 500ms var(--ease-out);
+}
+.live__out b { font-weight: 500; color: var(--c); }
+.live[data-beat='0'] .live__out:nth-child(1),
+.live[data-beat='1'] .live__out:nth-child(2),
+.live[data-beat='2'] .live__out:nth-child(3) { opacity: 1; transform: none; transition-delay: 300ms; }
+
+/* voice: a small warm waveform and the one spoken sentence */
+.live__out--voice { gap: 14px; }
+.live__wave { display: flex; align-items: center; gap: 3px; height: 26px; }
+.live__wave i {
+  width: 3px;
+  height: 100%;
+  border-radius: 1.5px;
+  background: var(--c);
+  transform: scaleY(0.06);
+  transition: transform 700ms var(--ease-out) calc(var(--i) * 18ms);
+}
+.live[data-beat='2'] .live__wave i { transform: scaleY(var(--amp)); }
+.live.is-on[data-beat='2'] .live__wave i { animation: live-speak 1.3s ease-in-out calc(700ms + var(--i) * -70ms) infinite; }
+@keyframes live-speak {
+  0%, 100% { transform: scaleY(var(--amp)); }
+  50% { transform: scaleY(calc(var(--amp) * 0.35 + 0.06)); }
+}
+.live__quote {
+  font-family: var(--font);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: #ffe6c4; /* warm frost: frost lit by the sun */
+}
+
+.live__dots {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.live__dots li {
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(238, 243, 255, 0.22);
+  transition: width 400ms var(--ease-out), background-color 400ms var(--ease);
+}
+.live[data-beat='0'] .live__dots li:nth-child(1),
+.live[data-beat='1'] .live__dots li:nth-child(2),
+.live[data-beat='2'] .live__dots li:nth-child(3) { width: 20px; background: var(--c); }
+
+/* ---- on-screen overlays, aligned to the screenshot ---- */
+
+/* hydrogen: a soft blue light around the dial row it just turned */
+.live__dials {
+  position: absolute;
+  left: 2.5%;
+  right: 2.5%;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--c) 9%, transparent);
+  box-shadow:
+    inset 0 0 0 1.5px color-mix(in srgb, var(--c) 80%, transparent),
+    inset 0 0 26px color-mix(in srgb, var(--c) 34%, transparent),
+    0 0 30px color-mix(in srgb, var(--c) 40%, transparent);
+  opacity: 0;
+  transition: opacity 500ms var(--ease);
+}
+.live[data-beat='0'] .live__dials { opacity: 1; }
+
+/* decision: the viewfinder's left edge beats once a second */
+.live__edge {
+  position: absolute;
+  left: 0;
+  width: 30%;
+  opacity: 0;
+  transition: opacity 400ms var(--ease);
+}
+.live__edge::before,
+.live__edge::after { content: ''; position: absolute; inset: 0; opacity: 0.25; }
+.live__edge::before {
+  background: radial-gradient(90% 55% at 0% 50%, color-mix(in srgb, var(--c) 70%, transparent), transparent 72%);
+  mix-blend-mode: screen;
+}
+.live__edge::after {
+  right: auto;
+  left: 2.4%;
+  width: 3px;
+  top: 3%;
+  bottom: 3%;
+  border-radius: 3px;
+  background: var(--c);
+  box-shadow: 0 0 14px 2px var(--c);
+}
+.live[data-beat='1'] .live__edge { opacity: 1; }
+.live.is-on[data-beat='1'] .live__edge::before,
+.live.is-on[data-beat='1'] .live__edge::after { animation: live-beat 1s var(--ease) infinite; }
+@keyframes live-beat {
+  0%, 100% { opacity: 0.3; }
+  14% { opacity: 1; }
+}
+
+/* ---- phones: the same column, a little smaller ---- */
+
+@media (max-width: 767px) {
+  .live__phone { height: min(62svh, 540px); }
+  .chip { font-size: 14px; gap: 8px; }
+  .chip__role { gap: 8px; }
+  .live__out { font-size: 16px; }
+  .live__quote { font-size: 22px; }
+  .live__out--voice { gap: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live__edge::before,
+  .live__edge::after { animation: none !important; opacity: 0.9; }
+  .live__wave i { animation: none !important; }
+  .chip--model, .live__out { transform: none; }
+}

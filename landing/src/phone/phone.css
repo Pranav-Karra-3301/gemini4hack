@@ -1,0 +1,69 @@
+/* The page's one iPhone (src/phone/phone.js). Matte: a near-black bezel, a graphite titanium edge
+   with a faint top-left highlight, small side buttons, a black Dynamic Island. phone.js sets the
+   aspect and every radius inline from config.js SCREEN; a consumer only sets the height (or the
+   width, with height: auto). No pseudo-elements on the root, so consumers may use them.
+   The root's defaults are in :where() so any consumer class overrides them, whatever the order. */
+
+:where(.iphone) {
+  position: relative;
+  display: block;
+  margin: 0;
+  height: min(72svh, 720px);
+  width: auto;
+  flex: none;
+}
+.iphone {
+  background: #07080a;
+  box-shadow:
+    inset 0 0 0 1.25px #2b2d32,
+    inset 0 0 0 2.5px #0d0e11,
+    0 28px 60px -28px rgba(0, 0, 0, 0.75);
+}
+
+/* the titanium edge: a hairline ring, lit softly from the top left, never glossy */
+.iphone__edge {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1.25px solid transparent;
+  background: linear-gradient(135deg, rgba(238, 243, 255, 0.2), rgba(238, 243, 255, 0.05) 22%, transparent 42%) border-box;
+  -webkit-mask: linear-gradient(#000 0 0) padding-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) padding-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
+}
+
+.iphone__btn {
+  position: absolute;
+  width: max(1.5px, 0.6%);
+  background: linear-gradient(90deg, #1c1d21, #34363c 60%, #26282c);
+  pointer-events: none;
+}
+.iphone__btn--l { right: 100%; border-radius: 2px 0 0 2px; }
+.iphone__btn--r { left: 100%; border-radius: 0 2px 2px 0; }
+
+/* the screen box is exactly the screenshot: overlays may be placed in % of it */
+.iphone__screen {
+  position: absolute;
+  overflow: hidden;
+  isolation: isolate;
+  background: #000;
+}
+.iphone__shot {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill; /* the box has the screenshot's own aspect: nothing is cropped or stretched */
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.iphone__island {
+  position: absolute;
+  z-index: 3;
+  border-radius: 999px;
+  background: #000;
+  pointer-events: none;
+}

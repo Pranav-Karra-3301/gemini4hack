@@ -1,0 +1,12 @@
+{
+  "name": "Heliocam: Gemini inside the camera",
+  "short_name": "Heliocam",
+  "start_url": "/",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "theme_color": "#05060B",
+  "background_color": "#05060B",
+  "display": "standalone"
+}

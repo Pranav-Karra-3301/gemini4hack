@@ -1,0 +1,108 @@
+/* The hero (hero.js): the iris scene full-bleed, the wordmark and tagline stacked under the lens
+   barrel. The scene sizes the barrel from the section's height: on desktop its centre sits at 35 %
+   and its bottom edge at 62.3 %; at <= 575px (the scene's Mobile breakpoint) they are 28 % and 46 %.
+   The type starts below that edge and its size is capped by the height too, so they never overlap. */
+
+.hero--iris {
+  --open: 0;
+  --shut: 0;
+  --iris-y: 35%;
+  --iris-bottom: 62.3%;
+  position: relative;
+  height: 100svh;
+  min-height: 560px;
+  overflow: clip;
+  isolation: isolate;
+  background: var(--ink);
+}
+
+.hero--iris .hero__backdrop { --fade-top: 0%; --fade-bottom: 18%; }
+
+/* Without the scene: a soft matte light high in the frame, a blue field with a warm core. */
+.hero--iris .hero__light {
+  opacity: calc((0.25 + var(--open) * 0.75) * (1 - var(--shut) * 0.5));
+}
+.hero--iris .hero__light > i {
+  position: absolute;
+  left: 50%;
+  top: var(--iris-y);
+  width: min(110vw, 1200px);
+  aspect-ratio: 1.3;
+  translate: -50% -50%;
+  scale: calc(0.6 + var(--open) * 0.4);
+  background:
+    radial-gradient(closest-side, rgba(255, 244, 224, 0.5), rgba(255, 195, 122, 0.12) 8%, transparent 18%),
+    radial-gradient(closest-side, rgba(76, 141, 255, 0.36), rgba(76, 141, 255, 0.13) 38%, transparent 78%);
+}
+
+/* The type: centred in the band between the barrel and the bottom edge. */
+.hero--iris .hero__type {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 0;
+  top: calc(var(--iris-bottom) + clamp(12px, 2svh, 24px));
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(10px, 1.6svh, 18px);
+  padding: 0 var(--container-pad) calc(clamp(16px, 4svh, 44px) + env(safe-area-inset-bottom, 0px));
+  text-align: center;
+  pointer-events: none;
+}
+.hero--iris .hero__mark {
+  margin: 0;
+  /* the trailing tracking would push the ink right of centre */
+  padding-right: 0.05em;
+  font-size: clamp(96px, min(15vw, 23svh), 240px);
+  font-weight: 700;
+  letter-spacing: -0.05em;
+  line-height: 0.9;
+  color: var(--text);
+  white-space: nowrap;
+  translate: 0 var(--kick, 0px);
+}
+.hero--iris .hero__line {
+  margin: 0;
+  font-size: clamp(20px, 2vw, 28px);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--muted);
+}
+
+/* The type rises in once the iris is mostly open (hero.js adds .is-in). */
+.hero--iris .hero__mark,
+.hero--iris .hero__line {
+  opacity: 0;
+  transform: translate3d(0, 12px, 0);
+  transition:
+    opacity 0.9s var(--ease-out),
+    transform 1.1s var(--ease-out);
+}
+.hero--iris.is-in .hero__mark,
+.hero--iris.is-in .hero__line {
+  opacity: 1;
+  transform: none;
+}
+.hero--iris.is-in .hero__line { transition-delay: 0.14s; }
+
+@media (max-width: 575px) {
+  .hero--iris {
+    --iris-y: 28%;
+    --iris-bottom: 46%;
+  }
+  /* the barrel ends higher on a phone: start the type a little under it rather than mid-band */
+  .hero--iris .hero__type {
+    top: calc(var(--iris-bottom) + clamp(32px, 7svh, 72px));
+    justify-content: flex-start;
+  }
+  .hero--iris .hero__mark { font-size: min(96px, 24vw); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero--iris .hero__mark,
+  .hero--iris .hero__line { transition: none; }
+}

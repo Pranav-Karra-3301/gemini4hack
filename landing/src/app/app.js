@@ -1,29 +1,28 @@
-// "In the app": real screens of the Heliocam iPhone app, each with what Gemini did on it.
+// "In the app": real screens of the Heliocam iPhone app, each with the model that worked on it.
+// Text-free (DESIGN_V5.md): the section title (TITLES.app); each screen gets only its name (at most
+// three words) and a model chip in that model's light (hydrogen blue, decision cyan, neon violet,
+// frost "on device" when no model ran), with what that model does after its id.
 // Desktop (>= 900px): a scroll-pinned horizontal gallery. Vertical scroll drives a row of
 // phones under one fixed warm spotlight; the centred phone is lit, its neighbours sit in shadow,
-// and a caption in the text column crossfades to it. Mobile: a native swipe carousel.
-// All copy and image paths come from APP (config.js); the phone geometry from PHONE.
-import { APP, PHONE } from '../config.js';
+// and the caption under it crossfades. Mobile: a native swipe carousel.
+// Screens (src, name, model) come from APP (config.js); each phone is the shared CSS iPhone
+// (src/phone/), which shows the whole screenshot. The header copy, `what`, `tech`, `more` and
+// `caption` fields are no longer rendered.
+import { APP, MODELS, TITLES } from '../config.js';
+import { phoneEl } from '../phone/phone.js';
+import { sectionTitle } from '../title/title.js';
+import { scrollToY } from '../scroll.js';
 import './app.css';
 
+const LABEL = TITLES.app;
 const DESKTOP = '(min-width: 900px)';
 const REDUCED = '(prefers-reduced-motion: reduce)';
 const SHADOW = 0.45; // brightness of a phone in shadow
 const SMALL = 0.86; // scale of a phone in shadow
 const SPACING = 1.18; // centre-to-centre distance, in phone widths
-const IDLE_MS = 150; // quiet time before the gallery settles on the nearest phone
 const FOLLOW_MS = 90; // time constant of the progress easing toward the scroll position
-const SNAP_MS = 140; // time constant of the settle
 
-const { frame: F, screen: S } = PHONE;
 const pct = (a, b) => `${((a / b) * 100).toFixed(4)}%`;
-const SCREEN_STYLE = [
-  `left:${pct(S.x, F.w)}`,
-  `top:${pct(S.y, F.h)}`,
-  `width:${pct(S.w, F.w)}`,
-  `height:${pct(S.h, F.h)}`,
-  `border-radius:${pct(S.r, S.w)} / ${pct(S.r, S.h)}`,
-].join(';');
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ESC[c]);
@@ -37,27 +36,21 @@ const MOTES = [
   [50, 12, 22, 15], [43, -4, 18, 11.5], [53, 7, 16, 1], [47, -9, 24, 17],
 ];
 
-const chipsMarkup = (s) => {
-  const model = s.model ? `<li class="app__chip app__chip--model">${esc(s.model)}</li>` : '';
-  const tech = (s.tech ? s.tech.split(' · ') : [])
-    .map((t) => `<li class="app__chip">${esc(t.trim())}</li>`)
-    .join('');
-  return model || tech ? `<ul class="app__chips">${model}${tech}</ul>` : '';
+// Each model's own colour of light (DESIGN_V5.md); screens with no model ran on the phone.
+// The chip shows the model's id, then its `role` (MODELS in config.js) behind a hairline.
+const MODEL_LIGHT = { 'gemini-4-hydrogen': 'hydrogen', 'gemini-decision-1': 'decision', 'gemini-4-neon': 'neon' };
+const ROLE = Object.fromEntries(Object.values(MODELS).map((m) => [m.id, m.role]));
+const chipMarkup = (s) => {
+  const kind = s.model ? MODEL_LIGHT[s.model] || 'hydrogen' : 'device';
+  const role = s.model && ROLE[s.model] ? `<span class="app__role">${esc(ROLE[s.model])}</span>` : '';
+  return `<span class="app__chip app__chip--${kind}"><i></i>${esc(s.model || 'on device')}${role}</span>`;
 };
 
-const captionMarkup = (s) => `
-  <h3 class="h3 app__name">${esc(s.name)}</h3>
-  <p class="app__what">${esc(s.what)}</p>
-  ${chipsMarkup(s)}`;
+const captionMarkup = (s) => `<span class="app__name">${esc(s.name)}</span>${chipMarkup(s)}`;
 
 const slideMarkup = (s, i) => `
   <figure class="app__slide" data-i="${i}">
-    <div class="app__phone" style="aspect-ratio:${F.w} / ${F.h}">
-      <div class="app__screen" style="${SCREEN_STYLE}">
-        <img class="app__shot" src="${esc(s.src)}" alt="${esc(s.name)}" loading="lazy" decoding="async" draggable="false" />
-      </div>
-      <img class="app__bezel" src="${esc(PHONE.bezel)}" alt="" loading="lazy" decoding="async" draggable="false" />
-    </div>
+    <div class="app__phone-slot"></div>
     <figcaption class="app__cap">${captionMarkup(s)}</figcaption>
   </figure>`;
 
@@ -72,33 +65,22 @@ const markup = (screens) => `
           ([x, dx, d, t]) => `<i style="--x:${x}%;--dx:${dx}px;--d:${d}s;--t:-${t}s"></i>`,
         ).join('')}</span>
       </div>
-      <div class="container grid app__grid">
-        <div class="col-text copy app__copy">
-          <p class="eyebrow">${esc(APP.label)}</p>
-          <h2 class="h2">${esc(APP.title)}</h2>
-          <p class="lede">${esc(APP.lede)}</p>
-          <div class="app__caps">${screens
-            .map((s, i) => `<div class="app__capx" data-i="${i}">${captionMarkup(s)}</div>`)
-            .join('')}</div>
-          <div class="app__rail" role="group" aria-label="${esc(APP.label)}">
-            <span class="app__rail-line"><span class="app__rail-fill"></span></span>
-            ${screens
-              .map(
-                (s, i) =>
-                  `<button class="app__tick" type="button" data-i="${i}" style="left:${pct(i, Math.max(1, screens.length - 1))}" aria-label="${esc(s.name)}"></button>`,
-              )
-              .join('')}
-          </div>
+      <div class="app__track" data-lenis-prevent-horizontal>${screens.map(slideMarkup).join('')}</div>
+      <div class="app__hud">
+        <div class="app__caps">${screens
+          .map((s, i) => `<div class="app__capx" data-i="${i}">${captionMarkup(s)}</div>`)
+          .join('')}</div>
+        <div class="app__rail" role="group" aria-label="${LABEL}">
+          <span class="app__rail-line"><span class="app__rail-fill"></span></span>
+          ${screens
+            .map(
+              (s, i) =>
+                `<button class="app__tick" type="button" data-i="${i}" style="left:${pct(i, Math.max(1, screens.length - 1))}" aria-label="${esc(s.name)}"></button>`,
+            )
+            .join('')}
         </div>
-        <div class="app__media" aria-hidden="true"></div>
       </div>
-      <div class="app__track">${screens.map(slideMarkup).join('')}</div>
     </div>
-  </div>
-  <div class="container app__more">
-    ${APP.moreLabel ? `<p class="eyebrow app__more-label">${esc(APP.moreLabel)}</p>` : ''}
-    <ul class="app__more-list">${(APP.more || []).map((m) => `<li>${esc(m)}</li>`).join('')}</ul>
-    ${APP.caption ? `<p class="small app__credit">${esc(APP.caption)}</p>` : ''}
   </div>`;
 
 export function mountApp(el) {
@@ -106,12 +88,16 @@ export function mountApp(el) {
   const n = screens.length;
   el.classList.add('app');
   el.innerHTML = markup(screens);
+  el.querySelector('.app__stage').prepend(sectionTitle(TITLES.app, { className: 'app__label' }));
+  el.querySelectorAll('.app__phone-slot').forEach((slot, i) =>
+    slot.replaceWith(phoneEl({ src: screens[i].src, alt: screens[i].name, className: 'app__phone', lazy: true })),
+  );
 
   const $ = (s) => el.querySelector(s);
   const pin = $('.app__pin');
   const stage = $('.app__stage');
-  const textCol = $('.app__copy');
-  const media = $('.app__media');
+  const hud = $('.app__hud');
+  const title = $('.app__label');
   const fill = $('.app__rail-fill');
   const slides = [...el.querySelectorAll('.app__slide')];
   const phones = slides.map((s) => s.querySelector('.app__phone'));
@@ -130,34 +116,25 @@ export function mountApp(el) {
   let active = -1;
   const geo = { cx: 0, cy: 0, w: 0, h: 0, gap: 0, vh: 0, step: 1 };
 
-  // Settle state. The settle scrolls the window itself, so the page and the gallery agree.
-  let snapping = false;
-  let snapY = 0;
-  let snapTo = 0;
-  let idleTimer = 0;
-  let touching = false;
-
   const read = () => {
     const r = pin.getBoundingClientRect();
     const s = -r.top;
     return {
-      s,
       raw: clamp(s / geo.step - 0.5, 0, n - 1),
-      pinned: r.top <= 0 && r.bottom >= geo.vh,
       top: window.scrollY + r.top,
     };
   };
 
   const measure = () => {
     if (!desktop) return;
-    const sr = stage.getBoundingClientRect();
-    const mr = media.getBoundingClientRect();
-    const tr = textCol.getBoundingClientRect();
     geo.vh = window.innerHeight;
     geo.w = phones[0].offsetWidth;
     geo.h = phones[0].offsetHeight;
-    geo.cx = mr.left + mr.width / 2 - sr.left;
-    geo.cy = stage.clientHeight / 2 + geo.vh * 0.02;
+    // centred between the title and the caption and rail, so neither touches the phones
+    geo.cx = stage.clientWidth / 2;
+    const top = title.offsetTop + title.offsetHeight + 24;
+    const bottom = hud.offsetTop - 16;
+    geo.cy = bottom - top >= geo.h ? (top + bottom) / 2 : Math.min((stage.clientHeight - hud.offsetHeight) / 2, stage.clientHeight / 2);
     geo.gap = geo.w * SPACING;
     geo.step = Math.max(1, (pin.offsetHeight - geo.vh) / n);
     const st = stage.style;
@@ -165,9 +142,6 @@ export function mountApp(el) {
     st.setProperty('--cy', `${geo.cy.toFixed(1)}px`);
     st.setProperty('--pw', `${geo.w}px`);
     st.setProperty('--ph', `${geo.h}px`);
-    // Phones fade into the dark before they reach the text.
-    st.setProperty('--fade-a', `${Math.round(tr.right - sr.left)}px`);
-    st.setProperty('--fade-b', `${Math.round(mr.left - sr.left + 120)}px`);
     for (const c of cache) c.t = '';
   };
 
@@ -227,15 +201,6 @@ export function mountApp(el) {
     if (!desktop) return;
     const dt = last ? Math.min(64, now - last) : 16;
     last = now;
-    if (snapping) {
-      const k = 1 - Math.exp(-dt / SNAP_MS);
-      snapY += (snapTo - snapY) * k;
-      if (Math.abs(snapTo - snapY) < 0.75) {
-        snapY = snapTo;
-        snapping = false;
-      }
-      window.scrollTo({ top: snapY, behavior: 'instant' });
-    }
     let { raw } = read();
     if (reduced) {
       raw = Math.round(raw); // whole screens only: always a static, centred state
@@ -245,7 +210,7 @@ export function mountApp(el) {
       if (Math.abs(raw - p) < 0.0005) p = raw;
     }
     render();
-    if (snapping || p !== raw) raf = requestAnimationFrame(frame);
+    if (p !== raw) raf = requestAnimationFrame(frame);
     else last = 0;
   };
 
@@ -253,55 +218,18 @@ export function mountApp(el) {
     if (!raf && desktop && visible) raf = requestAnimationFrame(frame);
   };
 
-  const trySnap = () => {
-    if (!desktop || reduced || touching || !visible || snapping) return;
-    const { raw, pinned, s } = read();
-    if (!pinned) return;
-    const k = Math.round(raw);
-    if (Math.abs(raw - k) < 0.003) return;
-    snapY = window.scrollY;
-    snapTo = Math.round(snapY + ((k + 0.5) * geo.step - s));
-    snapping = true;
-    kick();
-  };
-
-  const noteInput = () => {
-    clearTimeout(idleTimer);
-    idleTimer = setTimeout(trySnap, IDLE_MS);
-  };
-
-  // Anything the user does cancels a settle in progress.
-  const onUser = () => {
-    snapping = false;
-    if (desktop) noteInput();
-  };
-  const onTouchStart = () => {
-    touching = true;
-    onUser();
-  };
-  const onTouchEnd = () => {
-    touching = false;
-    onUser();
-  };
+  // The page never moves the window by itself: scroll drives the phones, and only a tick click
+  // (a user action) scrolls the page.
   const onScroll = () => {
     if (!desktop || !visible) return;
-    if (snapping) {
-      if (Math.abs(window.scrollY - snapY) <= 2) return kick(); // our own settle
-      snapping = false;
-    }
-    noteInput();
     kick();
   };
 
   const onTick = (e) => {
     const t = e.target.closest('.app__tick');
     if (!t || !desktop) return;
-    snapping = false;
     const { top } = read();
-    window.scrollTo({
-      top: Math.round(top + (Number(t.dataset.i) + 0.5) * geo.step),
-      behavior: reduced ? 'instant' : 'smooth',
-    });
+    scrollToY(Math.round(top + (Number(t.dataset.i) + 0.5) * geo.step));
   };
 
   const clearDesktop = () => {
@@ -317,7 +245,6 @@ export function mountApp(el) {
 
   const onMode = () => {
     desktop = mqDesk.matches;
-    snapping = false;
     if (desktop) {
       measure();
       p = read().raw;
@@ -329,7 +256,6 @@ export function mountApp(el) {
   const onReduced = () => {
     reduced = mqReduced.matches;
     el.classList.toggle('is-reduced', reduced);
-    if (reduced) snapping = false;
     kick();
   };
   const onResize = () => {
@@ -348,7 +274,6 @@ export function mountApp(el) {
         if (raf) cancelAnimationFrame(raf);
         raf = 0;
         last = 0;
-        snapping = false;
       }
     },
     { rootMargin: '10% 0px' },
@@ -357,12 +282,6 @@ export function mountApp(el) {
   const passive = { passive: true };
   window.addEventListener('scroll', onScroll, passive);
   window.addEventListener('resize', onResize, passive);
-  window.addEventListener('wheel', onUser, passive);
-  window.addEventListener('keydown', onUser, passive);
-  window.addEventListener('pointerdown', onUser, passive);
-  window.addEventListener('touchstart', onTouchStart, passive);
-  window.addEventListener('touchend', onTouchEnd, passive);
-  window.addEventListener('touchcancel', onTouchEnd, passive);
   el.addEventListener('click', onTick);
   mqDesk.addEventListener('change', onMode);
   mqReduced.addEventListener('change', onReduced);
@@ -371,21 +290,16 @@ export function mountApp(el) {
   el.classList.toggle('is-reduced', reduced);
   setActive(0);
   onMode();
+  // the title's height decides where the phones sit; measure again once its font is in
+  document.fonts?.ready.then(() => el.isConnected && onResize());
 
   return {
     destroy() {
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
-      clearTimeout(idleTimer);
       io.disconnect();
       window.removeEventListener('scroll', onScroll, passive);
       window.removeEventListener('resize', onResize, passive);
-      window.removeEventListener('wheel', onUser, passive);
-      window.removeEventListener('keydown', onUser, passive);
-      window.removeEventListener('pointerdown', onUser, passive);
-      window.removeEventListener('touchstart', onTouchStart, passive);
-      window.removeEventListener('touchend', onTouchEnd, passive);
-      window.removeEventListener('touchcancel', onTouchEnd, passive);
       el.removeEventListener('click', onTick);
       mqDesk.removeEventListener('change', onMode);
       mqReduced.removeEventListener('change', onReduced);

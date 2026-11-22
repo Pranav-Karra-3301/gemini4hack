@@ -1,0 +1,366 @@
+/* =====================================================================
+   Compare (src/compare/compare.js): Heliocam against other camera apps. Tokens from ../style.css.
+   Desktop: two phones on one stage, the scorecard under them, keys on the spine.
+   Mobile (< 768px): Heliocam first, then a smaller plain camera, then the rows as pairs.
+   ===================================================================== */
+
+.cmp {
+  --dull: #565c6a; /* the other side: cool grey, never lit */
+  --dull-2: #3a3f4b;
+  position: relative;
+  isolation: isolate;
+  overflow: clip;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100svh;
+  padding: clamp(96px, 14svh, 160px) var(--container-pad);
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--font);
+}
+/* Fade into ink at the top and bottom, over the light, under the content. */
+.cmp::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(var(--ink), rgba(var(--ink-rgb), 0) 18%, rgba(var(--ink-rgb), 0) 80%, var(--ink));
+}
+.cmp__grain {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.09;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 160px;
+}
+
+/* ---------------- stage: other | spine | Heliocam, rows under ---------------- */
+
+.cmp__stage {
+  --spine: clamp(140px, 12vw, 180px);
+  width: 100%;
+  max-width: 1060px;
+  display: grid;
+  grid-template-columns: 1fr var(--spine) 1fr;
+  align-items: end;
+}
+.cmp__side {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(20px, 2.6svh, 32px);
+  grid-row: 1;
+}
+.cmp__side--other { grid-column: 1; }
+.cmp__side--helio { grid-column: 3; }
+
+.cmp__name {
+  margin: 0;
+  line-height: 0.92;
+  text-align: center;
+  white-space: nowrap;
+}
+.cmp__name--other {
+  font-size: clamp(28px, 3.2vw, 48px);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--dull);
+}
+.cmp__name--helio {
+  font-size: clamp(48px, 6vw, 96px);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  margin-left: -0.04em;
+  color: var(--dull-2);
+  transition: color 1s var(--ease) 1.15s;
+}
+.cmp.is-lit .cmp__name--helio { color: var(--text); }
+
+/* ---------------- phones: the shared CSS iPhone (src/phone/) ---------------- */
+
+.cmp-phone { height: min(57svh, 600px); }
+.cmp-phone--other { height: min(44svh, 462px); }
+.cmp-phone .iphone__screen {
+  /* the screen box is the screenshot: overlays are placed in its 860 x 1866 pixels */
+  --u: calc(100cqw / 860);
+  --v: calc(100cqh / 1866);
+  container-type: size;
+  background: #05060c;
+}
+
+/* the plain camera: grey, dark, a viewfinder and a shutter */
+.cmp-phone--other .iphone__shot { filter: grayscale(1) brightness(0.46) contrast(0.9); }
+.cmp-phone--other .iphone__edge,
+.cmp-phone--other .iphone__btn { opacity: 0.5; }
+.cmp-plain { position: absolute; background: #0a0b0f; }
+.cmp-plain > i { position: absolute; top: calc(var(--v) * 330); transform: translate(-50%, -50%); border-radius: 50%; }
+.cmp-plain__shutter {
+  left: 50%;
+  width: calc(var(--u) * 156);
+  height: calc(var(--u) * 156);
+  border: calc(var(--u) * 7) solid #5b606b;
+  background: #5b606b;
+  box-shadow: inset 0 0 0 calc(var(--u) * 9) #0a0b0f;
+}
+.cmp-plain__thumb,
+.cmp-plain__flip {
+  width: calc(var(--u) * 96);
+  height: calc(var(--u) * 96);
+  background: #16181e;
+}
+.cmp-plain__thumb { left: calc(var(--u) * 150); border-radius: calc(var(--u) * 18) !important; }
+.cmp-plain__flip { left: calc(var(--u) * 710); }
+.cmp-cool {
+  position: absolute;
+  inset: 0;
+  background: #7d8db0;
+  mix-blend-mode: color;
+  opacity: 0.32;
+  pointer-events: none;
+}
+
+/* Heliocam: unlit until the light arrives */
+.cmp-phone--helio .iphone__screen { filter: brightness(0.3) saturate(0.3); transition: filter 1.2s var(--ease) 1s; }
+.cmp-phone--helio .iphone__edge { opacity: 0.45; transition: opacity 1.2s var(--ease) 1s; }
+.cmp.is-lit .cmp-phone--helio .iphone__screen { filter: none; }
+.cmp.is-lit .cmp-phone--helio .iphone__edge { opacity: 1; }
+
+/* gemini-decision-1: the viewfinder's left edge pulses cyan once a second */
+.cmp-pulse {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  opacity: 0;
+  box-shadow: inset calc(var(--u) * 34) 0 calc(var(--u) * 64) calc(var(--u) * -8) rgb(111, 227, 255);
+  background: linear-gradient(90deg, rgba(111, 227, 255, 0.5), rgba(111, 227, 255, 0.12) 14%, rgba(111, 227, 255, 0) 30%);
+}
+.cmp.is-lit .cmp-pulse { animation: cmp-pulse 1s var(--ease) infinite paused; }
+.cmp.is-playing .cmp-pulse { animation-play-state: running; }
+@keyframes cmp-pulse {
+  0% { opacity: 0.1; }
+  16% { opacity: 1; }
+  100% { opacity: 0.1; }
+}
+
+/* gemini-4-hydrogen: the ISO dial rolls by itself */
+.cmp-iso {
+  position: absolute;
+  overflow: hidden;
+  pointer-events: none;
+  background: rgb(19, 22, 32);
+  box-shadow: 0 0 calc(var(--u) * 6) calc(var(--u) * 3) rgb(19, 22, 32);
+  transition: opacity 0.25s var(--ease);
+}
+.cmp-iso.is-hidden { opacity: 0; }
+.cmp-iso__v {
+  --s: 0;
+  --k: 1;
+  position: absolute;
+  /* measured: this puts the digits' centre on --ay, and scaling pivots on that centre */
+  left: calc(var(--u) * (var(--ax) - 90));
+  top: calc(var(--v) * (var(--ay) + 4.1));
+  width: calc(var(--u) * 180);
+  height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font);
+  font-size: calc(var(--u) * 66);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  color: #f1f4fc;
+  transform-origin: 50% calc(var(--u) * -2);
+  transform: translateX(calc(var(--u) * var(--step) * var(--s))) scale(var(--k));
+  transition: transform 0.65s var(--ease-out), opacity 0.65s var(--ease-out), color 0.6s var(--ease), font-weight 0.65s var(--ease-out);
+}
+.cmp-iso__v[data-slot='-2'],
+.cmp-iso__v[data-slot='2'] { opacity: 0; }
+.cmp-iso__v[data-slot='-2'] { --s: -2; --k: 0.47; }
+.cmp-iso__v[data-slot='-1'] { --s: -1; --k: 0.47; }
+.cmp-iso__v[data-slot='1'] { --s: 1; --k: 0.47; }
+.cmp-iso__v[data-slot='2'] { --s: 2; --k: 0.47; }
+.cmp-iso__v:not([data-slot='0']) { color: rgba(238, 243, 255, 0.48); font-weight: 400; }
+.cmp-iso.is-set .cmp-iso__v[data-slot='0'] { color: var(--gemini-glow); transition-duration: 0.65s, 0.65s, 0.15s, 0.65s; }
+.cmp-iso.is-snap .cmp-iso__v { transition: none; }
+
+/* ---------------- light: a sweep from the left that settles on Heliocam ---------------- */
+
+.cmp__light {
+  position: absolute;
+  left: 50%;
+  top: 56%;
+  width: 0;
+  height: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.cmp__light > i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+}
+/* blue into violet with a warm core; matte, wide, low */
+.cmp__pool {
+  width: min(1500px, 120vw);
+  height: min(1500px, 165svh);
+  transform: translate(-50%, -46%);
+  background:
+    radial-gradient(22% 20% at 50% 42%, rgba(255, 244, 224, 0.2), rgba(255, 244, 224, 0.06) 55%, rgba(255, 244, 224, 0)),
+    radial-gradient(30% 30% at 50% 45%, rgba(127, 178, 255, 0.3), rgba(var(--gemini-rgb), 0.12) 60%, rgba(var(--gemini-rgb), 0)),
+    radial-gradient(closest-side at 50% 46%, rgba(var(--gemini-rgb), 0.24), rgba(var(--gemini-rgb), 0.1) 42%, rgba(var(--gemini-rgb), 0.03) 72%, rgba(var(--gemini-rgb), 0)),
+    radial-gradient(34% 30% at 60% 30%, rgba(154, 124, 246, 0.14), rgba(154, 124, 246, 0.04) 60%, rgba(154, 124, 246, 0));
+  transition: opacity 1.5s var(--ease) 0.95s;
+}
+.cmp.is-lit .cmp__pool { opacity: 1; }
+.cmp__beam {
+  width: min(820px, 64vw);
+  height: min(1300px, 140svh);
+  transform: translate(-50%, -46%) translateX(-110vw);
+  background: radial-gradient(closest-side, rgba(127, 178, 255, 0.3), rgba(var(--gemini-rgb), 0.11) 52%, rgba(var(--gemini-rgb), 0));
+}
+.cmp.is-lit .cmp__beam { animation: cmp-sweep 1.9s cubic-bezier(0.45, 0.05, 0.2, 1) forwards; }
+@keyframes cmp-sweep {
+  0% { transform: translate(-50%, -46%) translateX(-110vw); opacity: 0; }
+  20% { opacity: 0.5; }
+  72% { opacity: 1; }
+  100% { transform: translate(-50%, -46%) translateX(0); opacity: 0; }
+}
+/* the plain camera gets only a cold, flat ambient */
+.cmp__side--other::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: 50%;
+  bottom: 30%;
+  width: 130%;
+  height: 90%;
+  transform: translate(-50%, 50%);
+  pointer-events: none;
+  background: radial-gradient(closest-side, rgba(150, 160, 180, 0.045), rgba(150, 160, 180, 0));
+}
+
+/* ---------------- scorecard ---------------- */
+
+.cmp__score {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  list-style: none;
+  margin: clamp(32px, 5svh, 52px) 0 0;
+  padding: 0;
+  display: grid;
+  row-gap: clamp(6px, 1svh, 10px);
+}
+.cmp__row {
+  display: grid;
+  grid-template-columns: 1fr var(--spine) 1fr;
+  align-items: center;
+  min-height: 40px;
+}
+.cmp__a {
+  justify-self: center;
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--dull);
+}
+.cmp__k {
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  color: rgba(238, 243, 255, 0.6);
+}
+.cmp__k svg {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.cmp__b { justify-self: center; }
+.cmp__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 16px 9px 13px;
+  border-radius: 999px;
+  font-family: var(--font-code);
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--dull);
+  background-color: rgba(238, 243, 255, 0.02);
+  transition: color 0.8s var(--ease), background-color 0.8s var(--ease);
+  transition-delay: calc(1.35s + var(--i) * 0.12s);
+}
+.cmp__chip i {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background-color: var(--dull-2);
+  transition: background-color 0.8s var(--ease), box-shadow 0.8s var(--ease);
+  transition-delay: inherit;
+}
+.cmp.is-lit .cmp__chip {
+  color: color-mix(in srgb, var(--c) 52%, #eef3ff);
+  background-color: color-mix(in srgb, var(--c) 12%, transparent);
+}
+.cmp.is-lit .cmp__chip i {
+  background-color: var(--c);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--c) 70%, transparent);
+}
+
+/* ---------------- reduced motion: the lit end state, still ---------------- */
+
+.cmp.is-still *,
+.cmp.is-still *::before,
+.cmp.is-still *::after { transition: none !important; animation: none !important; }
+.cmp.is-still .cmp-pulse { opacity: 0.55; }
+.cmp.is-still .cmp-iso { display: none; } /* the screenshot already reads ISO 400 */
+
+/* ---------------- mobile ---------------- */
+
+@media (max-width: 767.98px) {
+  .cmp {
+    min-height: 0;
+    padding: 104px 20px 112px;
+  }
+  .cmp__stage { grid-template-columns: 1fr; }
+  .cmp__side--helio { grid-column: 1; grid-row: 1; }
+  .cmp__side--other { grid-column: 1; grid-row: 2; margin-top: 72px; gap: 16px; }
+  .cmp__name--helio { font-size: 60px; }
+  .cmp__name--other { font-size: 28px; }
+  .cmp-phone--helio { height: min(64svh, 560px); }
+  .cmp-phone--other { height: min(30svh, 260px); opacity: 0.8; }
+  .cmp__pool { width: 210vw; height: min(1100px, 120svh); }
+  .cmp__beam { width: 90vw; height: 90svh; }
+  .cmp__side--other::before { width: 200%; }
+  .cmp__score { grid-row: 3; margin-top: 56px; row-gap: 22px; }
+  .cmp__row {
+    grid-template-columns: 72px 1fr;
+    grid-template-areas: 'k k' 'a b';
+    row-gap: 8px;
+    min-height: 0;
+  }
+  .cmp__k { grid-area: k; justify-self: start; font-size: 14px; }
+  .cmp__a { grid-area: a; justify-self: start; font-size: 18px; }
+  .cmp__b { grid-area: b; justify-self: start; }
+  .cmp__chip { font-size: 14px; padding: 8px 14px 8px 12px; }
+}

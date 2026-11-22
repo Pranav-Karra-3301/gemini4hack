@@ -52,7 +52,7 @@ return vec4(x, 1.0);`,
   {
     id: 'halftone',
     title: 'Halftone',
-    request: 'CMYK halftone print, rotated dot screens on paper',
+    request: 'CMYK halftone print',
     metal: `float cell = max(size.x, size.y) / 140.0;
 float2 px = uv * size;
 float3 paper = float3(0.97, 0.95, 0.90);

@@ -3,9 +3,13 @@
   "name": "heliocam-landing",
   "account_id": "ed61a2220d42b5b8a61059cce9af9980",
   "compatibility_date": "2026-11-01",
+  // worker.js adds byte ranges to og.mp4 (og:video); everything else is served from the assets
+  "main": "./worker.js",
   "assets": {
     "directory": "./dist",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/og.mp4"]
   },
   "routes": [{ "pattern": "helio.pranavkarra.me", "custom_domain": true }]
 }
