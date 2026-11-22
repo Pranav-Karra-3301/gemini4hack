@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Compare demo: Heliocam and other camera apps</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,400..700&family=Google+Sans+Code:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      .pad {
+        height: 80vh;
+        display: grid;
+        place-items: center;
+        color: rgba(238, 243, 255, 0.45);
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="pad">The previous chapter</div>
+    <section id="compare" aria-label="Heliocam and other camera apps"></section>
+    <div class="pad">The next chapter</div>
+    <script type="module">
+      import '../style.css';
+      import { mountCompare } from './compare.js';
+      window.__compare = mountCompare(document.getElementById('compare'));
+    </script>
+  </body>
+</html>

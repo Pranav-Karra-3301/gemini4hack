@@ -1,10 +1,10 @@
 /* =====================================================================
    Showcase: "03 · After the shot", lighting by distance in 3D (real data).
-   One sticky, full-viewport stage: edge to edge, no frame. Captions sit
-   on the left over a soft dark gradient. Type follows landing/DESIGN_TYPE.md,
-   palette landing/DESIGN_V4.md (night ink, Gemini blue only for what the
-   AI does). Every token has a fallback so the module also works on a page
-   that does not load style.css.
+   One sticky, full-viewport stage: edge to edge, no frame, no captions
+   (DESIGN_V5.md). The only words are the section title, one model chip per
+   stage (id and role) and the fader pills. Frost is on-device light, violet
+   is Neon's. Every token has a fallback so the module also works on a page
+   without style.css.
    ===================================================================== */
 
 .sc {
@@ -13,9 +13,12 @@
   --sc-text: var(--text, #eef3ff);
   --sc-muted: var(--muted, rgba(238, 243, 255, 0.68));
   --sc-faint: var(--faint, rgba(238, 243, 255, 0.45));
-  --sc-eyebrow: rgba(238, 243, 255, 0.55);
-  --sc-blue: #4c8dff;
-  --sc-blue-rgb: 76, 141, 255;
+  --sc-frost: #eef3ff;
+  --sc-frost-rgb: 238, 243, 255;
+  --sc-neon: #9a7cf6;
+  --sc-neon-rgb: 154, 124, 246;
+  --sc-code: var(--font-code, 'Google Sans Code', ui-monospace, 'SF Mono', monospace);
+  --sc-bottom: max(28px, 5svh);
   --sc-ease: var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
   --sc-container: var(--container, 1280px);
   --sc-pad: var(--container-pad, clamp(20px, 5vw, 64px));
@@ -27,13 +30,12 @@
 
 .sc-track {
   position: relative;
-  height: 400vh; /* 300vh of scroll: photo beat + 3D ~170vh, the relight ~130vh (STAGE_AT in showcase.js) */
+  height: 400svh; /* 300svh of scroll: photo beat + 3D ~170svh, the relight ~130svh (STAGE_AT in showcase.js) */
 }
 
 .sc-sticky {
   position: sticky;
   top: 0;
-  height: 100vh;
   height: 100svh;
   overflow: hidden;
   background: var(--sc-ink);
@@ -48,11 +50,11 @@
   left: 0;
   right: 0;
   z-index: 3;
-  height: 9vh;
+  height: 16svh;
   pointer-events: none;
 }
-.sc-sticky::before { top: 0; background: linear-gradient(var(--sc-ink), rgba(var(--sc-ink-rgb), 0)); }
-.sc-sticky::after { bottom: 0; background: linear-gradient(rgba(var(--sc-ink-rgb), 0), var(--sc-ink)); }
+.sc-sticky::before { top: 0; background: linear-gradient(var(--sc-ink), rgba(var(--sc-ink-rgb), 0.55) 40%, rgba(var(--sc-ink-rgb), 0)); }
+.sc-sticky::after { bottom: 0; background: linear-gradient(rgba(var(--sc-ink-rgb), 0), rgba(var(--sc-ink-rgb), 0.55) 60%, var(--sc-ink)); }
 
 /* ---------------- media: two full-bleed canvases ---------------- */
 
@@ -99,108 +101,127 @@
     linear-gradient(180deg, var(--sc-ink) 0, rgba(var(--sc-ink-rgb), 0) 13%, rgba(var(--sc-ink-rgb), 0) 87%, var(--sc-ink) 100%);
 }
 
-/* the caption's soft dark gradient */
+/* the stage's sides melt into the ink too: no edge anywhere */
 .sc-shade {
   position: absolute;
   inset: 0;
   z-index: 1;
   pointer-events: none;
   background:
-    linear-gradient(90deg, rgba(var(--sc-ink-rgb), 0.74) 0, rgba(var(--sc-ink-rgb), 0.5) 24%, rgba(var(--sc-ink-rgb), 0.16) 44%, rgba(var(--sc-ink-rgb), 0) 60%),
-    linear-gradient(0deg, rgba(var(--sc-ink-rgb), 0.55) 0, rgba(var(--sc-ink-rgb), 0) 22%);
+    radial-gradient(120% 100% at 50% 50%, rgba(var(--sc-ink-rgb), 0) 55%, rgba(var(--sc-ink-rgb), 0.7) 100%),
+    linear-gradient(90deg, rgba(var(--sc-ink-rgb), 0.6) 0, rgba(var(--sc-ink-rgb), 0) 9%, rgba(var(--sc-ink-rgb), 0) 91%, rgba(var(--sc-ink-rgb), 0.6) 100%);
 }
 
-/* ---------------- captions (left) ---------------- */
+/* ---------------- the section title: top-left on the page margin, over the top fade ---------------- */
 
-.sc-copy {
+.sc-head {
+  --sc-head-top: max(36px, 7svh);
   position: absolute;
-  z-index: 2;
-  top: 50%;
-  left: max(var(--sc-pad), calc((100vw - var(--sc-container)) / 2 + var(--sc-pad)));
-  width: min(440px, 40vw);
-  transform: translateY(-50%);
-  text-shadow: 0 1px 24px rgba(0, 0, 0, 0.45);
+  z-index: 4;
+  top: var(--sc-head-top);
+  left: var(--sc-pad);
+  right: var(--sc-pad);
   pointer-events: none;
 }
+/* a soft pool of ink behind the title, so it reads over the photo: no box, no edge */
+.sc-head::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  left: calc(-1 * var(--sc-pad));
+  top: calc(-1 * var(--sc-head-top));
+  width: min(100vw, 1100px);
+  height: calc(100% + var(--sc-head-top) + 140px);
+  background: radial-gradient(farthest-side at 0 0, rgba(var(--sc-ink-rgb), 0.8), rgba(var(--sc-ink-rgb), 0.45) 55%, rgba(var(--sc-ink-rgb), 0));
+}
 
-.sc-eyebrow {
+/* ---------------- model chips: the id in Google Sans Code and the model's own light, then its role ---------------- */
+
+.sc-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  height: 40px;
   margin: 0;
-  font-size: var(--t-eyebrow, 13px);
-  font-weight: var(--t-eyebrow-w, 600);
-  letter-spacing: var(--t-eyebrow-tr, 0.12em);
-  line-height: var(--t-eyebrow-lh, 1);
-  text-transform: uppercase;
-  color: var(--sc-eyebrow);
+  padding: 0 18px 0 16px;
+  border-radius: 999px;
+  font-family: var(--sc-code);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  color: var(--sc-chip, var(--sc-frost));
+  background: rgba(var(--sc-ink-rgb), 0.55);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: inset 0 0 20px rgba(var(--sc-chip-rgb, var(--sc-frost-rgb)), 0.12);
 }
+.sc-chip > i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sc-chip, var(--sc-frost));
+  box-shadow: 0 0 12px rgba(var(--sc-chip-rgb, var(--sc-frost-rgb)), 0.8);
+}
+.sc-chip-role {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  font-family: var(--font, 'Google Sans Flex', system-ui, sans-serif);
+  font-weight: 500;
+  color: rgba(var(--sc-frost-rgb), 0.6);
+}
+.sc-chip-role::before {
+  content: '';
+  width: 1px;
+  height: 14px;
+  background: rgba(var(--sc-frost-rgb), 0.22);
+}
+.sc-chip--frost { --sc-chip: var(--sc-frost); --sc-chip-rgb: var(--sc-frost-rgb); }
+.sc-chip--neon { --sc-chip: var(--sc-neon); --sc-chip-rgb: var(--sc-neon-rgb); }
 
-.sc-steps {
-  display: grid;
-}
-.sc-step {
-  grid-area: 1 / 1;
-  transition: opacity 420ms var(--sc-ease), transform 420ms var(--sc-ease);
-}
-.sc-step[aria-hidden='true'] {
+/* while the 3D scene loads: the dot breathes and a hairline fills under the name */
+.sc-chip-load {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 7px;
+  height: 1px;
+  background: rgba(var(--sc-frost-rgb), 0.45);
+  transform-origin: 0 50%;
+  transform: scaleX(var(--load, 0));
   opacity: 0;
-  transform: translateY(8px);
+  transition: opacity 300ms var(--sc-ease);
+}
+.sc-chip.is-loading .sc-chip-load { opacity: 1; }
+.sc-chip.is-loading > i { animation: sc-breathe 1.4s ease-in-out infinite alternate; }
+@keyframes sc-breathe {
+  from { opacity: 0.35; }
 }
 
-.sc-h2 {
-  margin: var(--r-eyebrow-h2, 16px) 0 0;
-  font-size: var(--t-h2, clamp(40px, 4.6vw, 68px));
-  font-weight: var(--t-h2-w, 650);
-  letter-spacing: var(--t-h2-tr, -0.03em);
-  line-height: var(--t-h2-lh, 1.02);
-  text-wrap: balance;
+/* Neon's chip floats just above the fader pills, in stage B only */
+.sc-chip--neon {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  bottom: calc(var(--sc-bottom) + 40px + 18px);
+  opacity: 0;
+  transform: translate(-50%, 4px);
+  transition: opacity 360ms var(--sc-ease), transform 360ms var(--sc-ease);
+  pointer-events: none;
 }
+.sc-chip--neon.is-on { opacity: 1; transform: translate(-50%, 0); }
 
-.sc-ticks {
-  display: flex;
-  gap: 6px;
-  margin: 40px 0 20px;
-}
-.sc-ticks i {
-  width: 22px;
-  height: 2px;
-  border-radius: 2px;
-  background: rgba(238, 243, 255, 0.22);
-  transition: background-color 240ms ease-out;
-}
-.sc-ticks i.is-on { background: var(--sc-text); }
-
-.sc-steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.sc-step .sc-eyebrow { display: block; }
-
-.sc-h3 {
-  margin: 12px 0 0;
-  font-size: var(--t-h3, clamp(22px, 1.9vw, 28px));
-  font-weight: var(--t-h3-w, 600);
-  letter-spacing: var(--t-h3-tr, -0.015em);
-  line-height: var(--t-h3-lh, 1.2);
-}
-
-.sc-line {
-  margin: 8px 0 0;
-  max-width: 34ch;
-  font-size: var(--t-step, 17px);
-  font-weight: 400;
-  letter-spacing: var(--t-step-tr, -0.005em);
-  line-height: var(--t-step-lh, 1.4);
-  color: var(--sc-muted);
-}
-
-/* ---------------- bottom bar: hint / layer pills ---------------- */
+/* ---------------- bottom bar: depth chip / layer pills ---------------- */
 
 .sc-bar {
   position: absolute;
   z-index: 4;
   left: 50%;
-  bottom: max(28px, 5vh);
+  bottom: var(--sc-bottom);
   width: min(100% - 2 * var(--sc-pad), 920px);
   height: 40px;
   transform: translateX(-50%);
@@ -220,14 +241,6 @@
 .sc-bar > .is-on { opacity: 1; transform: none; }
 .sc-bar > .sc-pills.is-on { pointer-events: auto; }
 
-.sc-hint {
-  font-size: var(--t-small, 13px);
-  line-height: 1;
-  color: var(--sc-faint);
-  font-variant-numeric: tabular-nums;
-}
-.sc-hint b { font-weight: 600; color: var(--sc-muted); }
-
 .sc-pill {
   display: flex;
   align-items: center;
@@ -240,7 +253,7 @@
   backdrop-filter: blur(12px);
   box-shadow: inset 0 0 0 1px rgba(238, 243, 255, 0.1);
   font: inherit;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1;
   color: var(--sc-muted);
   white-space: nowrap;
@@ -289,18 +302,19 @@
   background: var(--sc-text);
   transition: background-color 280ms var(--sc-ease), box-shadow 280ms var(--sc-ease);
 }
-/* Gemini moving a layer: a matte blue glow from inside the pill, no outer bloom */
+/* Neon moving a layer: its violet light from inside the pill, and a soft halo around it */
 .sc-pill.is-moving {
   color: var(--sc-text);
-  background-color: rgba(var(--sc-blue-rgb), 0.1);
+  background-color: rgba(var(--sc-neon-rgb), 0.12);
   box-shadow:
-    inset 0 0 0 1px rgba(var(--sc-blue-rgb), 0.55),
-    inset 0 0 16px rgba(var(--sc-blue-rgb), 0.3);
+    inset 0 0 0 1px rgba(var(--sc-neon-rgb), 0.5),
+    inset 0 0 18px rgba(var(--sc-neon-rgb), 0.32),
+    0 0 28px -6px rgba(var(--sc-neon-rgb), 0.55);
 }
 .sc-pill.is-moving .sc-pill-name em { color: var(--sc-muted); }
 .sc-pill.is-moving .sc-pill-knob {
-  background: var(--sc-blue);
-  box-shadow: 0 0 6px rgba(var(--sc-blue-rgb), 0.5);
+  background: var(--sc-neon);
+  box-shadow: 0 0 8px rgba(var(--sc-neon-rgb), 0.7);
 }
 
 .sc-compare {
@@ -323,7 +337,7 @@
 }
 .sc-compare:focus-visible {
   outline: none;
-  box-shadow: inset 0 0 0 1px rgba(238, 243, 255, 0.1), 0 0 0 3px rgba(var(--sc-blue-rgb), 0.55);
+  box-shadow: inset 0 0 0 1px rgba(238, 243, 255, 0.1), 0 0 0 3px rgba(var(--sc-frost-rgb), 0.45);
 }
 
 /* ---------------- small screens ---------------- */
@@ -334,19 +348,10 @@
 }
 
 @media (max-width: 767px) {
-  .sc-shade {
-    background: linear-gradient(0deg, rgba(var(--sc-ink-rgb), 0.82) 0, rgba(var(--sc-ink-rgb), 0.55) 34%, rgba(var(--sc-ink-rgb), 0) 60%);
-  }
-  .sc-copy {
-    top: auto;
-    bottom: calc(max(28px, 5vh) + 96px);
-    left: var(--sc-pad);
-    right: var(--sc-pad);
-    width: auto;
-    transform: none;
-  }
-  .sc-h2 { font-size: clamp(32px, 9vw, 40px); }
-  .sc-ticks { margin: 20px 0 14px; }
+  .sc-head { --sc-head-top: max(28px, 4.5svh); }
+  .sc-chip { height: 36px; gap: 9px; padding: 0 15px 0 13px; font-size: 14px; }
+  .sc-chip-role { gap: 9px; }
+  .sc-chip--neon { bottom: calc(var(--sc-bottom) + 76px + 14px); }
   .sc-bar { height: 76px; }
   .sc-bar > * { flex-wrap: wrap; align-content: flex-end; gap: 8px; }
   .sc-pill { gap: 7px; height: 32px; padding: 0 10px; font-size: 12px; }
@@ -356,11 +361,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sc-step,
   .sc-bar > *,
+  .sc-chip--neon,
   .sc-canvas,
   .sc-pill,
   .sc-pill-knob { transition-duration: 1ms; }
-  .sc-step[aria-hidden='true'],
   .sc-bar > * { transform: none; }
+  .sc-chip--neon { transform: translate(-50%, 0); }
+  .sc-chip.is-loading > i { animation: none; }
 }

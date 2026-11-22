@@ -1,18 +1,23 @@
 // Real-data showcase: "03 · After the shot", lighting by distance in 3D.
-// One sticky, full-viewport stage inside a ~400vh track. It opens on the photo from chapter 01 for
+// One sticky, full-viewport stage inside a ~400svh track. It opens on the photo from chapter 01 for
 // one beat (2D canvas, ./shaders.js), then scroll drives two stages:
 //   A the 3D scene rebuilt from the photo and its depth (3D canvas, ../memory3d/): it starts at the
 //     capture camera, identical to the photo, then pulls back and orbits ~25deg, frustum marking the
 //     frame. Drag to look around.
 //   B Gemini's light plan on that scene: three layers picked by distance from the camera (the people,
 //     the whole scene's warmth, the far background), fader pills, hold to compare.
+// Text-free (DESIGN_V5.md): the section title (TITLES.after) top-left, no captions. One model chip
+// per stage, near the bottom centre, with what that model does: A Depth Pro 2 (frost), B
+// gemini-4-neon (violet) over the fader pills.
 // Data: landing/public/showcase/ (IMG_1491 photo; the packed depth and people mask are fetched only
 // if the 3D scene cannot load) and landing/public/splats/img-1491.spz (loaded as the section nears).
 //
 //   import { mountShowcase } from './showcase/showcase.js';
-//   const { destroy } = mountShowcase(sectionEl, { heading: true, chapters: ['03 · After the shot'] });
+//   const { destroy } = mountShowcase(sectionEl);
 
 import './showcase.css';
+import { MODELS, TITLES } from '../config.js';
+import { sectionTitle } from '../title/title.js';
 import { VERT, FRAG } from './shaders.js';
 
 const BASE = (import.meta.env && import.meta.env.BASE_URL) || '/';
@@ -25,18 +30,16 @@ const SRC = {
 // The 3D scene for this photo (public/memories.json): splat + capture intrinsics.
 const MEMORY = { id: 'img-1491', file: `${BASE}splats/img-1491.spz`, frame: { w: 2978, h: 2234, f: 2236.9 } };
 
+// `label` is for screen readers only; `model` does the stage's work (its id and role on the chip).
+const DEPTH_PRO = { id: 'Depth Pro 2', role: 'Measures depth on device' };
 const STAGES = [
   {
-    eyebrow: 'Depth',
-    title: 'The shot, in 3D',
-    line: 'The photo and its depth, rebuilt as a scene you can turn. Drag to look around.',
+    model: DEPTH_PRO,
     label: 'The photo rebuilt in 3D from its depth, seen from beside the camera that took it.',
   },
   {
-    eyebrow: 'Edit for Me',
-    title: 'Gemini plays the faders',
-    line: 'Gemini 4 looks at the shot and moves the faders one at a time. The light follows the depth: the faces at 2.5 m lift, the sea settles.',
-    label: 'The 3D scene relit by distance: the people brighter, the light warmer, the background dimmer.',
+    model: MODELS.neon,
+    label: 'Gemini 4 Neon relights the 3D scene by distance: the people brighter, the light warmer, the background dimmer.',
   },
 ];
 const STAGE_AT = [0, 0.56]; // progress where each stage starts
@@ -77,16 +80,10 @@ function stageParams(p) {
   };
 }
 
-function template(opts) {
-  const steps = STAGES.map(
-    (s, i) => `
-      <li class="sc-step${i === 0 ? ' is-active' : ''}" data-step="${i}"${i === 0 ? '' : ' aria-hidden="true"'}>
-        <span class="sc-eyebrow">${s.eyebrow}</span>
-        <h3 class="sc-h3">${s.title}</h3>
-        <p class="sc-line">${s.line}</p>
-      </li>`,
-  ).join('');
-  const ticks = STAGES.map((_, i) => `<i${i === 0 ? ' class="is-on"' : ''}></i>`).join('');
+// A model chip: its id in its own light, a hairline, then what it does.
+const chip = (m) => `<span class="sc-chip-id">${m.id}</span><span class="sc-chip-role">${m.role}</span>`;
+
+function template() {
   const pills = FADERS.map(
     (f, i) => `
       <div class="sc-pill" data-fader="${i}">
@@ -95,9 +92,6 @@ function template(opts) {
         <output>${fmt(0, f.digits)}</output>
       </div>`,
   ).join('');
-  const head = opts.heading
-    ? `<div class="sc-head"><p class="sc-eyebrow">${opts.chapters[0]}</p><h2 class="sc-h2">Light by distance.</h2></div>`
-    : '';
   return `
   <div class="sc-track">
     <div class="sc-sticky">
@@ -107,13 +101,12 @@ function template(opts) {
         <div class="sc-feather"></div>
       </div>
       <div class="sc-shade" aria-hidden="true"></div>
-      <div class="sc-copy">
-        ${head}
-        <div class="sc-ticks" aria-hidden="true">${ticks}</div>
-        <ol class="sc-steps">${steps}</ol>
-      </div>
+      <div class="sc-head"></div>
+      <p class="sc-chip sc-chip--neon" aria-hidden="true"><i></i>${chip(STAGES[1].model)}</p>
       <div class="sc-bar">
-        <div class="sc-hint"><span class="sc-hint-text"></span></div>
+        <div class="sc-depth" aria-hidden="true">
+          <p class="sc-chip sc-chip--frost"><i></i>${chip(STAGES[0].model)}<b class="sc-chip-load"></b></p>
+        </div>
         <div class="sc-pills" aria-label="The layers Gemini set, by distance">
           ${pills}
           <button type="button" class="sc-pill sc-compare" aria-pressed="false">Hold to compare</button>
@@ -241,28 +234,23 @@ function createRenderer(canvas) {
 
 // ------------------------------------------------------------------------------------------------
 
-export function mountShowcase(el, options = {}) {
-  const opts = {
-    heading: true,
-    chapters: ['03 · After the shot'],
-    ...options,
-  };
+export function mountShowcase(el) {
   el.classList.add('sc');
   const host = document.createElement('div');
-  host.innerHTML = template(opts);
+  host.innerHTML = template();
   const track = host.firstElementChild;
   el.appendChild(track);
 
   const $ = (s) => track.querySelector(s);
+  $('.sc-head').append(sectionTitle(TITLES.after));
   const media = $('.sc-media');
   const canvas = $('.sc-canvas--2d');
   const canvas3d = $('.sc-canvas--3d');
   const feather = $('.sc-feather');
-  const hintText = $('.sc-hint-text');
+  const depthChip = $('.sc-chip--frost');
+  const neonChip = $('.sc-chip--neon');
   const compare = $('.sc-compare');
-  const steps = [...track.querySelectorAll('.sc-step')];
-  const ticks = [...track.querySelectorAll('.sc-ticks i')];
-  const bars = { hint: $('.sc-hint'), pills: $('.sc-pills') };
+  const bars = { depth: $('.sc-depth'), pills: $('.sc-pills') };
   const pills = [...track.querySelectorAll('.sc-pill[data-fader]')].map((n) => ({
     el: n,
     out: n.querySelector('output'),
@@ -346,12 +334,6 @@ export function mountShowcase(el, options = {}) {
   function setStage(s) {
     if (s === stage) return;
     stage = s;
-    steps.forEach((n, i) => {
-      n.classList.toggle('is-active', i === s);
-      if (i === s) n.removeAttribute('aria-hidden');
-      else n.setAttribute('aria-hidden', 'true');
-    });
-    ticks.forEach((n, i) => n.classList.toggle('is-on', i <= s));
     media.setAttribute('aria-label', STAGES[s].label);
   }
 
@@ -359,6 +341,7 @@ export function mountShowcase(el, options = {}) {
     if (key === bar) return;
     if (bar) bars[bar].classList.remove('is-on');
     if (key) bars[key].classList.add('is-on');
+    neonChip.classList.toggle('is-on', key === 'pills');
     bar = key;
   }
 
@@ -382,7 +365,7 @@ export function mountShowcase(el, options = {}) {
   // ---- 3D memory ---------------------------------------------------------------------------
   function load3d() {
     if (loading3d || failed3d || destroyed) return;
-    hintText.innerHTML = 'Loading the 3D scene';
+    depthChip.classList.add('is-loading');
     loading3d = import('../memory3d/stage.js')
       .then(({ createMemoryStage }) => {
         if (destroyed) return null;
@@ -390,7 +373,7 @@ export function mountShowcase(el, options = {}) {
           def: MEMORY,
           onDirty: invalidate,
           onProgress: (e) => {
-            if (e.lengthComputable && !stage3d) hintText.innerHTML = `Loading the 3D scene <b>&middot;</b> ${Math.round((e.loaded / e.total) * 100)}%`;
+            if (e.lengthComputable && !stage3d) depthChip.style.setProperty('--load', (e.loaded / e.total).toFixed(3));
           },
         });
         sizeCanvases(st);
@@ -402,7 +385,7 @@ export function mountShowcase(el, options = {}) {
         if (import.meta.env?.DEV) window.__showcase3d = { st, invalidate };
         const m = st.memory;
         console.info('[showcase] memory ready', { splats: m.count, median: m.median, quantiles: m.quantiles });
-        hintText.textContent = 'Drag to look around';
+        depthChip.classList.remove('is-loading');
         el.classList.add('has-3d');
         invalidate();
       })
@@ -410,7 +393,7 @@ export function mountShowcase(el, options = {}) {
         console.warn('[showcase] 3D scene unavailable, staying flat:', err);
         failed3d = true;
         canvas3d.remove();
-        hintText.textContent = '';
+        depthChip.classList.remove('is-loading');
         loadFlatEdit();
         invalidate();
       });
@@ -432,9 +415,9 @@ export function mountShowcase(el, options = {}) {
 
     const P = stageParams(cur);
     setStage(P.stage);
-    // Stage A: the load progress, then "Drag to look around" once the 3D scene is on screen.
-    // Stage B: the layer pills. Nothing during the photo beat or if the 3D scene failed.
-    setBar(P.stage === 1 ? 'pills' : stage3d ? (P.show3d > 0.5 ? 'hint' : null) : failed3d ? null : 'hint');
+    // Stage A: the depth chip (with the load hairline until the 3D scene is ready), once the 3D
+    // scene is on screen. Stage B: Neon's chip over the layer pills. Nothing if the 3D scene failed.
+    setBar(P.stage === 1 ? 'pills' : stage3d ? (P.show3d > 0.5 ? 'depth' : null) : failed3d ? null : 'depth');
     if (P.stage === 1 && !stage3d) loadFlatEdit(); // still loading or failed: the photo carries the edit
 
     const wantEdit = editOn ? P.edit > 0.3 : P.edit > 0.6;
@@ -599,9 +582,11 @@ export function mountShowcase(el, options = {}) {
       canvas.height = h;
     }
     if (st) {
-      // Portrait: the captions sit at the bottom, so slide the pulled-back scene up to keep the people clear.
+      // No captions to clear any more: centre the pulled-back scene. Portrait only nudges it up a
+      // little so the people stay clear of the fader pills at the bottom.
       rigSy ??= st.rig.sy;
-      st.rig.sy = cw / ch < 0.75 ? -0.16 : rigSy;
+      st.rig.sx = 0;
+      st.rig.sy = cw / ch < 0.75 ? -0.05 : rigSy;
     }
     // 1.2M splats: Wayback's 1.5x cap keeps the fill rate sane on retina screens.
     st?.resize(cw, ch, Math.min(window.devicePixelRatio || 1, 1.5));

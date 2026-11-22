@@ -1,161 +1,189 @@
-/* Footer: sunrise scene (WebGL canvas), then the app row and credits on night ink. */
-.hf {
-  --hf-ink: #05060b;
-  --hf-text: #eef3ff;
-  --hf-muted: rgba(238, 243, 255, 0.68);
-  --hf-faint: rgba(238, 243, 255, 0.45);
+/* Footer (src/footer/footer.js): a Unicorn sunrise, the wordmark big in the sky above the horizon and the
+   credits on the dark foreground. footer.js sets --rise (0 pre-dawn, 1 sun up, eased from scroll),
+   --show (the wordmark's opacity) and --lift (what's left of its 18 px rise). Self-contained: the page tokens are used when present. */
+
+.footer {
+  --rise: 0;
+  --show: 0;
+  --lift: 1;
+  --f-ink: var(--ink, #05060b);
+  --f-frost: #eef3ff;
+  --f-warm: #fff4e0;
+  --f-horizon: 64%; /* where the scene's horizon sits */
+  --f-word-y: 31%; /* the middle of the clean sky zone (22-42%) */
   position: relative;
   display: block;
-  overflow: hidden;
-  background: var(--hf-ink);
-  color: var(--hf-text);
-  font-family: var(--font, 'Google Sans Flex', system-ui, sans-serif);
+  height: max(100svh, 680px);
+  overflow: clip;
+  isolation: isolate;
+  background: var(--f-ink);
+  color: var(--f-frost);
+  font-family: var(--font, 'Google Sans Flex', 'Google Sans', system-ui, sans-serif);
 }
 
-.hf__scene {
-  position: relative;
-  height: 100vh;
-  height: 100svh;
-  min-height: 600px;
-  max-height: 1100px;
-}
+/* ---------- the sky: the scene, or the CSS dawn until then ---------- */
 
-.hf__canvas {
+/* Fades in from the ink above and back to ink at the very bottom. */
+.footer__sky {
   position: absolute;
   inset: 0;
-  display: block;
+  z-index: 0;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(transparent, #000 18%, #000 86%, transparent);
+  mask-image: linear-gradient(transparent, #000 18%, #000 86%, transparent);
+}
+.footer__sky .backdrop__scene,
+.footer__dawn {
+  position: absolute;
+  inset: 0;
+  transition: opacity 0.9s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.footer__sky .backdrop__scene { opacity: 0; }
+.footer__sky.is-live .backdrop__scene { opacity: 1; }
+.footer__sky.is-live .footer__dawn { opacity: 0; }
+
+/* The CSS dawn: navy overhead, amber at the horizon, a soft warm disc rising behind the ground. */
+.footer__dawn {
+  overflow: hidden;
+  background: linear-gradient(
+    to bottom,
+    #05060b 0%,
+    #080b1f 20%,
+    #0d1438 40%,
+    #1b2a66 52%,
+    #4b3a68 57%,
+    #a35a48 61%,
+    #e08a4e var(--f-horizon)
+  );
+}
+/* The warm wash along the horizon brightens as the sun comes up. */
+.footer__halo {
+  position: absolute;
+  left: -20%;
+  right: -20%;
+  top: calc(var(--f-horizon) - 34%);
+  height: 50%;
+  background: radial-gradient(50% 50% at 50% 68%, rgba(255, 195, 122, 0.55), rgba(255, 138, 61, 0.16) 52%, transparent 78%);
+  opacity: calc(0.35 + 0.65 * var(--rise));
+}
+/* The disc: centre a little under the horizon before dawn, two-thirds up at rise 1. */
+.footer__sun {
+  --d: clamp(150px, 19vw, 300px);
+  position: absolute;
+  left: 50%;
+  top: var(--f-horizon);
+  width: var(--d);
+  height: var(--d);
+  margin: calc(var(--d) / -2) 0 0 calc(var(--d) / -2);
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff4e0 0 40%, #ffd9a0 48%, rgba(255, 168, 92, 0.5) 58%, rgba(255, 138, 61, 0.12) 66%, transparent 71%);
+  transform: translateY(calc((1 - var(--rise)) * var(--d) * 0.5 - var(--rise) * var(--d) * 0.12));
+  opacity: calc(0.55 + 0.45 * var(--rise));
+}
+/* Near-black ground in front of the sun, with a thin warm edge at the horizon. */
+.footer__ground {
+  position: absolute;
+  inset: var(--f-horizon) 0 0;
+  background:
+    linear-gradient(to bottom, rgba(255, 190, 120, 0.42), rgba(255, 150, 90, 0.08) 3px, transparent 26px),
+    linear-gradient(to bottom, #0d0e15, #08090f 36%, var(--f-ink));
+}
+/* Film grain so the gradients read as light, not as flat fills. */
+.footer__grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.16;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 1.4 -0.2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ---------- the wordmark: solid, lit by the dawn ---------- */
+
+.footer__word {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 0;
+  top: var(--f-word-y);
+  margin: 0;
+  text-align: center;
+  white-space: nowrap;
+  font-size: clamp(96px, 19vw, 300px);
+  font-weight: 700;
+  font-optical-sizing: auto;
+  letter-spacing: -0.05em;
+  line-height: 0.9;
+  text-box: trim-both cap alphabetic;
+  color: color-mix(in srgb, var(--f-frost), var(--f-warm) calc(var(--rise) * 100%));
+  opacity: var(--show);
+  transform: translateY(calc(-50% + var(--lift) * 18px));
+  /* the negative tracking leaves a trailing gap; pull the line back to optical centre */
+  text-indent: -0.05em;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ---------- credits ---------- */
+
+.footer__credits {
+  position: absolute;
+  z-index: 1;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  box-sizing: border-box;
   width: 100%;
-  height: 100%;
-}
-
-.hf__fallback {
-  display: none;
-}
-
-/* the scene's bottom fades to ink; the content row sits in that fade */
-.hf__wrap {
-  position: relative;
-  max-width: 1280px;
-  margin: calc(-1 * clamp(32px, 6vh, 72px)) auto 0;
-  padding: 0 clamp(20px, 5vw, 64px) calc(clamp(32px, 6vh, 64px) + env(safe-area-inset-bottom, 0px));
-}
-
-.hf__app {
+  max-width: var(--container, 1280px);
+  margin-inline: auto;
+  padding: 22px var(--container-pad, clamp(20px, 5vw, 64px)) max(28px, env(safe-area-inset-bottom));
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 16px;
 }
-
-.hf__icon {
-  display: block;
-  flex: none;
-  width: 56px;
-  height: 56px;
-  border-radius: 12.5px;
-}
-
-.hf__name {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin: 0;
-  font-size: var(--t-h3, clamp(22px, 1.9vw, 28px));
-  font-weight: var(--t-h3-w, 600);
-  letter-spacing: var(--t-h3-tr, -0.015em);
-  line-height: var(--t-h3-lh, 1.2);
-  color: var(--hf-text);
-}
-.hf__name span {
-  font-size: 15px;
-  font-weight: 400;
-  letter-spacing: 0;
-  line-height: 1.4;
-  color: var(--hf-muted);
-}
-
-.hf__base {
-  display: flex;
-  align-items: baseline;
-  gap: 8px 40px;
-  margin-top: clamp(40px, 7vh, 72px);
-  padding-top: 20px;
-  border-top: 1px solid rgba(238, 243, 255, 0.08);
-}
-.hf__base p {
-  margin: 0;
-  font-size: var(--t-small, 13px);
-  font-weight: 400;
-  letter-spacing: 0;
-  line-height: var(--t-small-lh, 1.5);
-  color: var(--hf-faint);
-}
-.hf__built,
-.hf__year {
-  flex: none;
-  white-space: nowrap;
-}
-.hf__base .hf__built {
-  color: var(--hf-muted);
-}
-.hf__credits {
-  flex: 1;
-  min-width: 0;
-}
-
-/* the content row arrives with the light */
-.hf--armed .hf__app,
-.hf--armed .hf__base {
-  opacity: 0;
-  transform: translateY(14px);
-  transition:
-    opacity 1.4s ease,
-    transform 1.6s cubic-bezier(0.2, 0.7, 0.2, 1);
-}
-.hf--armed .hf__base {
-  transition-delay: 0.35s;
-}
-.hf--lit .hf__app,
-.hf--lit .hf__base {
-  opacity: 1;
-  transform: none;
-}
-
-/* no WebGL: a still dawn and a plain wordmark */
-.hf--nogl .hf__scene {
-  background:
-    radial-gradient(ellipse 50% 22% at 50% 66%, rgba(255, 138, 61, 0.32), transparent 70%),
-    linear-gradient(#05060b, #0b1030 50%, #1b2a66 66%, #05060b 68%);
-}
-.hf--nogl .hf__fallback {
+.footer__credits::before {
+  content: '';
   position: absolute;
-  inset: 0 0 38%;
-  display: grid;
-  place-items: center;
+  top: 0;
+  left: var(--container-pad, clamp(20px, 5vw, 64px));
+  right: var(--container-pad, clamp(20px, 5vw, 64px));
+  height: 1px;
+  background: rgba(238, 243, 255, 0.08);
+}
+.footer__app {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--f-frost);
+}
+.footer__icon {
+  display: block;
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  flex-shrink: 0;
+}
+.footer__note {
   margin: 0;
-  font-size: var(--t-display, clamp(88px, 11vw, 168px));
-  font-weight: 700;
-  letter-spacing: -0.045em;
-  color: rgba(238, 243, 255, 0.82);
+  font-size: 13px;
+  font-weight: 400;
+  color: rgba(238, 243, 255, 0.5);
 }
 
-@media (max-width: 767px) {
-  .hf__scene {
-    height: 88vh;
-    height: 88svh;
-    min-height: 560px;
-    max-height: 820px;
+/* ---------- mobile ---------- */
+
+@media (max-width: 640px) {
+  .footer {
+    --f-horizon: 60%;
+    --f-word-y: 30%;
   }
-  .hf__base {
+  .footer__word { font-size: 22vw; }
+  .footer__credits {
     flex-direction: column;
-    align-items: flex-start;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hf--armed .hf__app,
-  .hf--armed .hf__base {
-    opacity: 1;
-    transform: none;
-    transition: none;
+    gap: 10px;
+    padding-top: 20px;
   }
 }

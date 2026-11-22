@@ -1,132 +1,103 @@
 /* =====================================================================
-   "In the app" (src/app/app.js). Tokens from ../style.css :root.
-   Desktop >= 900px: pinned stage, one warm spotlight, phones slide under it.
-   Mobile: header, native swipe carousel with captions, then the list.
+   "In the app" (src/app/app.js). Tokens from ../style.css :root, with fallbacks.
+   Text-free (DESIGN_V5.md): the section title, then each screen's name and model chip.
+   Desktop >= 900px: pinned stage, one warm spotlight, phones slide under it,
+   the caption and rail centred under the lit phone.
+   Mobile: the label, then a native swipe carousel, each caption under its phone.
    ===================================================================== */
 
-.app { position: relative; }
-
-/* ---------------- phone: bezel PNG over the screenshot, clipped to the screen rect ---------------- */
-
-.app__phone { position: relative; }
-.app__screen {
-  position: absolute;
-  overflow: hidden;
-  isolation: isolate;
-  background: #05060c;
-}
-.app__shot {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  user-select: none;
-}
-.app__bezel {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  user-select: none;
+.app {
+  --app-frost: #eef3ff;
+  --app-frost-rgb: 238, 243, 255;
+  --app-pad: var(--container-pad, clamp(20px, 5vw, 64px));
+  position: relative;
+  color: var(--text, #eef3ff);
+  font-family: var(--font, 'Google Sans Flex', system-ui, sans-serif);
 }
 
-/* ---------------- caption: name, what Gemini did, model and tech chips ---------------- */
+/* ---------------- phone: the shared CSS iPhone (src/phone/), whole screenshot ---------------- */
 
-.app__name { color: var(--text); }
-.app__what {
-  margin-top: 12px;
-  font-size: var(--t-lede);
-  font-weight: var(--t-lede-w);
-  letter-spacing: var(--t-lede-tr);
-  line-height: var(--t-lede-lh);
-  color: var(--muted);
-  max-width: 40ch;
-  text-wrap: pretty;
-}
-.app__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 20px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.app__chip {
-  font-family: var(--font-code);
-  font-size: 12px;
-  font-weight: 400;
+.app__phone { height: min(66svh, 640px); }
+
+/* ---------------- the title (TITLES.app, src/title/) ---------------- */
+
+.app__label { white-space: nowrap; }
+
+/* ---------------- caption: the screen's name and its model, in that model's light ---------------- */
+
+.app__name {
+  font-size: 20px;
+  font-weight: 600;
   line-height: 1.2;
-  padding: 6px 10px;
-  border-radius: 999px;
-  color: var(--muted);
-  background: rgba(238, 243, 255, 0.04);
-  box-shadow: inset 0 0 0 1px rgba(238, 243, 255, 0.1);
+  letter-spacing: -0.01em;
+  color: var(--app-frost);
   white-space: nowrap;
 }
-.app__chip--model {
-  font-weight: 500;
-  color: var(--gemini-glow);
-  background: rgba(var(--gemini-rgb), 0.12);
-  box-shadow: inset 0 0 0 1px rgba(var(--gemini-rgb), 0.34);
-}
-
-/* ---------------- also in the app ---------------- */
-
-.app__more { padding-top: clamp(48px, 9vh, 104px); padding-bottom: var(--section-pad); }
-.app__more-label { margin-bottom: 24px; }
-.app__more-list {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  column-gap: var(--col-gap);
-  row-gap: 14px;
-  margin: 0;
-  padding: 32px 0 0;
-  list-style: none;
-  border-top: 1px solid rgba(238, 243, 255, 0.08);
-}
-.app__more-list li {
-  position: relative;
-  padding-left: 18px;
+.app__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 17px 0 15px;
+  border-radius: 999px;
+  font-family: var(--font-code, 'Google Sans Code', ui-monospace, 'SF Mono', monospace);
   font-size: 15px;
-  line-height: 1.45;
-  color: var(--muted);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--chip);
+  background: rgba(var(--chip-rgb), 0.08);
+  box-shadow: inset 0 0 20px rgba(var(--chip-rgb), 0.14);
 }
-.app__more-list li::before {
+/* what the model does, after its id: frost at 60%, behind a hairline */
+.app__role {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font, 'Google Sans Flex', system-ui, sans-serif);
+  color: rgba(var(--app-frost-rgb), 0.6);
+}
+.app__role::before {
   content: '';
-  position: absolute;
-  left: 0;
-  top: calc(0.725em - 2.5px);
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--gemini);
+  width: 1px;
+  height: 0.95em;
+  margin-left: 3px;
+  background: rgba(var(--app-frost-rgb), 0.22);
 }
-.app__credit { margin-top: 32px; }
+.app__chip > i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--chip);
+  box-shadow: 0 0 12px rgba(var(--chip-rgb), 0.8);
+}
+.app__chip--hydrogen { --chip: #4c8dff; --chip-rgb: 76, 141, 255; }
+.app__chip--decision { --chip: #6fe3ff; --chip-rgb: 111, 227, 255; }
+.app__chip--neon { --chip: #9a7cf6; --chip-rgb: 154, 124, 246; }
+.app__chip--device { --chip: var(--app-frost); --chip-rgb: var(--app-frost-rgb); }
 
 /* =====================================================================
    desktop: the pinned gallery
    ===================================================================== */
 
 @media (min-width: 900px) {
-  /* 100vh of stage plus 60vh of scroll per screen; the first and last screens dwell half a step. */
+  /* 100svh of stage plus 60svh of scroll per screen; the first and last screens dwell half a step. */
   .app__pin {
     position: relative;
-    height: calc(100vh + var(--n) * 60vh);
+    height: calc(100svh + var(--n) * 60svh);
   }
   .app__stage {
     position: sticky;
     top: 0;
-    height: 100vh;
+    height: 100svh;
     overflow: clip;
-    --cx: 67%;
-    --cy: 52%;
-    --pw: 320px;
-    --ph: 660px;
-    --fade-a: 42%;
-    --fade-b: 52%;
+    --cx: 50%;
+    --cy: 46%;
+    --pw: 290px;
+    --ph: 594px;
   }
-  /* a deep vignette over the phones, under the text */
+  /* a deep vignette over the phones, under the caption; the top and bottom melt into the ink */
   .app__stage::after {
     content: '';
     position: absolute;
@@ -134,22 +105,35 @@
     z-index: 1;
     pointer-events: none;
     background:
-      linear-gradient(180deg, rgba(var(--ink-rgb), 0.9), transparent 12%, transparent 86%, rgba(var(--ink-rgb), 0.95)),
-      radial-gradient(70% 90% at var(--cx) 40%, transparent 50%, rgba(var(--ink-rgb), 0.65));
+      linear-gradient(180deg, var(--ink, #05060b), transparent 13%, transparent 85%, var(--ink, #05060b)),
+      radial-gradient(70% 90% at var(--cx) 40%, transparent 50%, rgba(5, 6, 11, 0.65));
   }
 
-  .app__grid {
-    position: relative;
+  .app__label {
+    position: absolute;
     z-index: 3;
-    height: 100%;
-    pointer-events: none;
+    top: max(32px, 6svh);
+    left: var(--app-pad);
   }
-  .app__copy { pointer-events: auto; }
-  .app__media { grid-column: 6 / span 7; grid-row: 1; align-self: stretch; }
 
-  .app__caps { display: grid; margin-top: 56px; width: 100%; }
+  /* caption and rail, centred under the lit phone */
+  .app__hud {
+    position: absolute;
+    z-index: 3;
+    left: 50%;
+    bottom: max(28px, 4.5svh);
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+  }
+  .app__caps { display: grid; justify-items: center; }
   .app__capx {
     grid-area: 1 / 1;
+    display: flex;
+    align-items: center;
+    gap: 16px;
     opacity: 0;
     visibility: hidden;
     transform: translateY(6px);
@@ -165,9 +149,8 @@
   /* progress rail: a hairline with one tick per screen */
   .app__rail {
     position: relative;
-    width: min(100%, 280px);
+    width: 280px;
     height: 14px;
-    margin-top: 40px;
   }
   .app__rail-line {
     position: absolute;
@@ -201,13 +184,13 @@
   .app__tick.is-on { height: 14px; background: var(--text); }
   .app__tick:focus-visible { outline: 1px solid var(--gemini-glow); outline-offset: 4px; }
 
-  /* the track: phones are placed by app.js; they fade out before they reach the text */
+  /* the track: phones are placed by app.js; they fade into the dark toward both sides */
   .app__track {
     position: absolute;
     inset: 0;
     z-index: 1;
-    -webkit-mask-image: linear-gradient(90deg, transparent var(--fade-a), #000 var(--fade-b), #000 calc(100% - 96px), transparent);
-    mask-image: linear-gradient(90deg, transparent var(--fade-a), #000 var(--fade-b), #000 calc(100% - 96px), transparent);
+    -webkit-mask-image: linear-gradient(90deg, transparent 2%, #000 26%, #000 74%, transparent 98%);
+    mask-image: linear-gradient(90deg, transparent 2%, #000 26%, #000 74%, transparent 98%);
   }
   .app__slide {
     position: absolute;
@@ -217,10 +200,9 @@
     will-change: transform, filter;
     filter: brightness(calc(0.45 + 0.55 * var(--lit, 0)));
   }
-  .app__phone { height: min(74vh, 700px); width: auto; }
   .app__cap { display: none; }
   /* warm light falling on the lit screen, matte: a low, soft wash from above */
-  .app__screen::after {
+  .app__phone .iphone__screen::after {
     content: '';
     position: absolute;
     inset: 0;
@@ -306,11 +288,10 @@
   100% { transform: translate3d(var(--dx), 92%, 0); opacity: 0; }
 }
 
-/* short laptop screens: tighten the text column so header, caption and rail fit */
+/* short laptop screens: a smaller phone so the caption and rail still fit under it */
 @media (min-width: 900px) and (max-height: 780px) {
-  .app__caps { margin-top: 36px; }
-  .app__rail { margin-top: 28px; }
-  .app .lede { max-width: 40ch; }
+  .app__phone { height: 62svh; }
+  .app__hud { gap: 12px; }
 }
 
 /* =====================================================================
@@ -318,23 +299,21 @@
    ===================================================================== */
 
 @media (max-width: 899.98px) {
-  .app { padding-top: var(--section-pad); }
+  .app { padding-block: var(--section-pad, clamp(96px, 14svh, 168px)); }
   .app__stage { display: flex; flex-direction: column; }
   .app__light,
-  .app__caps,
-  .app__rail,
-  .app__media { display: none; }
-  .app__grid { display: block; }
+  .app__hud { display: none; }
+  .app__label { padding-inline: var(--app-pad); }
 
   .app__track {
     display: flex;
     gap: 16px;
-    margin-top: 48px;
-    padding: 24px var(--container-pad) 8px;
+    margin-top: 28px;
+    padding: 24px var(--app-pad) 8px;
     overflow-x: auto;
     overscroll-behavior-x: contain;
     scroll-snap-type: x mandatory;
-    scroll-padding-inline: var(--container-pad);
+    scroll-padding-inline: var(--app-pad);
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
   }
@@ -343,7 +322,7 @@
     flex: 0 0 min(70vw, 320px);
     scroll-snap-align: start;
   }
-  .app__phone { width: 100%; }
+  .app__phone { width: 100%; height: auto; }
   /* a soft warm light from above each phone */
   .app__phone::before {
     content: '';
@@ -358,17 +337,25 @@
     background: radial-gradient(closest-side, rgba(var(--sun-rgb), 0.12), rgba(var(--sun-rgb), 0.03) 60%, transparent);
   }
   .app__slide { position: relative; isolation: isolate; }
-  .app__cap { margin-top: 24px; }
-  .app__cap .app__name { font-size: 20px; }
-  .app__cap .app__what { font-size: 16px; line-height: 1.45; margin-top: 8px; }
-  .app__cap .app__chips { margin-top: 14px; gap: 6px; }
-
-  .app__more { padding-top: 56px; }
-  .app__more-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-@media (max-width: 599.98px) {
-  .app__more-list { grid-template-columns: minmax(0, 1fr); }
+  .app__cap {
+    margin-top: 22px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .app__cap .app__name { font-size: 18px; }
+  .app__cap .app__chip { height: 34px; gap: 9px; padding: 0 14px 0 12px; font-size: 14px; }
+  /* a phone-wide caption has no room for the id and the role on one line: the role goes under it */
+  .app__cap .app__chip:has(.app__role) {
+    flex-wrap: wrap;
+    height: auto;
+    row-gap: 6px;
+    padding-block: 9px;
+    border-radius: 17px;
+  }
+  .app__cap .app__role { flex-basis: 100%; padding-left: 16px; }
+  .app__cap .app__role::before { display: none; }
 }
 
 /* reduced motion: the static current state; no crossfades, motes or easing */

@@ -1,20 +1,43 @@
-// Single source of truth for names, media paths, copy and step timings.
+// Single source of truth for names, media paths, labels and the models' colours.
 // Rename the product here and the whole page follows.
 //
-// Every technical claim on the page comes from the iPhone app's code (issue #41, branch
-// feat/41-iphone-standalone). Keep it that way: if the app changes, change the copy here.
+// The page is text-free (DESIGN_V5.md "Text rules"): the wordmark, the tagline, model ids,
+// tool-call chips and one spoken quote. Every technical claim comes from the iPhone app's code
+// (issue #41, branch feat/41-iphone-standalone). If the app changes, change it here.
 export const PRODUCT = {
   name: 'Heliocam',
-  line: 'A camera that turns you toward the light.',
-  sub: 'An iPhone camera with a Gemini 4 agent inside. It moves the real controls, tells you where to stand and measures every shot in 3D.',
-  badges: ['iPhone', 'LiDAR', 'Gemini 4'],
-  poweredBy: 'Powered by Gemini 4',
+  line: 'Gemini inside the camera.',
 };
 
-// Exported Unicorn Studio scenes (landing/public/scenes/). Only these mount.
+// Exported Unicorn Studio scenes (landing/public/scenes/). A missing file keeps the CSS light.
 export const SCENES = {
-  viewfinder: '/scenes/phone-viewfinder.json',
+  hero: '/scenes/v5-hero.json', // variable `open` 0-1: the iris opens on the sparkle
+  gemini: '/scenes/v5-gemini.json', // variable `lit` 0-1: the line draws by ~0.4, then the "4" lights
+  model: '/scenes/v5-model.json', // variable `model`: 0 hydrogen, 1 decision, 2 voice
 };
+
+// Each model is its own colour of Gemini's light (DESIGN_V5.md "Lead").
+// `role` is what the model does in the app, in at most three words, shown next to its id.
+export const MODELS = {
+  hydrogen: { id: 'gemini-4-hydrogen', color: '#4C8DFF', role: 'Runs the camera' },
+  decision: { id: 'gemini-decision-1', color: '#6FE3FF', role: 'Picks the move' },
+  neon: { id: 'gemini-4-neon', color: '#9A7CF6', role: 'Edits and writes looks' },
+  voice: { id: 'gemini-3.8-flash-tts', color: '#FFC37A', role: 'Talks to you' },
+};
+
+// One big, clean title per section (src/title.js): what the section shows, in 2-3 words.
+export const TITLES = {
+  lidar: 'Sees in 3D.',
+  live: 'Live suggestions.',
+  after: 'Lights by depth.',
+  looks: 'Writes the look.',
+  app: 'The real app.',
+};
+
+// The real screenshots in public/app/ come from the iPhone 15 Pro simulator: 1178 x 2556 px,
+// 393 x 852 pt. `radius` is that display's corner radius in pt (55), so a phone drawn at any
+// size rounds the screenshot exactly as the device does, with nothing cropped.
+export const SCREEN = { w: 1178, h: 2556, pt: { w: 393, h: 852 }, radius: 55 };
 
 // iPhone 16 Pro bezel (design/landing/assets/iphone-frame.json). Phone scenes are laid out
 // in a `viewport`-sized box (their design size), then CSS-scaled and clipped to `screen`.
@@ -25,104 +48,47 @@ export const PHONE = {
   viewport: { w: 393, h: 852 },
 };
 
-// The hero: the thesis. The hackathon bars image analysis apps; this is why Heliocam isn't one.
-export const THESIS = {
-  line: ['Image analysis describes a picture.', 'Heliocam takes one.'],
-  rows: [
-    { k: 'When', a: 'After the photo exists', b: 'Before the shutter fires' },
-    { k: 'Input', a: 'A finished picture', b: 'A live camera, its controls and you' },
-    { k: 'Output', a: 'Words about pixels', b: 'Function calls to the sensor and lens, and moves for you to make' },
-  ],
-  labels: { a: 'Image analysis', b: 'Heliocam' },
+// "Gemini 4": the key-art section right after the hero, its models in order along the line.
+export const GEMINI = {
+  label: 'Gemini 4',
+  models: [MODELS.hydrogen, MODELS.decision, MODELS.neon, MODELS.voice],
 };
 
-// Sections in page order (DESIGN_V4.md "Page structure"). `n` is the chapter number.
-// `media` alternates sides; text always shares one left edge.
+// The live loop (src/live/): one phone, three models, one beat each as you scroll.
+// Regions are in % of the real screenshot (860 x 1867), measured from the image.
+export const LIVE = {
+  screens: { camera: '/app/camera.webp', guide: '/app/camera-guide.webp' },
+  regions: {
+    dials: { top: 65.4, height: 9.4 }, // the ISO / SS / EV row
+    viewfinder: { top: 1.1, height: 63.2 }, // the photo, whose left edge pulses
+  },
+  beats: [
+    { model: MODELS.hydrogen, screen: 'camera', call: 'set_camera', args: 'iso 400 · 1/125' },
+    { model: MODELS.decision, screen: 'guide', call: 'move ←', args: 'every 1 s' },
+    { model: MODELS.voice, screen: 'guide', quote: 'That’s it. Take it.' },
+  ],
+};
+
+// Sections in page order (DESIGN_V5.md "Page beats"). Labels are at most three words.
 export const CHAPTERS = [
   { id: 'top', kind: 'hero' },
-  {
-    // src/lidar/ mountLidar(el, copy): a real scene as points, settling into the photo.
-    id: 'lidar',
-    kind: 'lidar',
-    n: 1,
-    copy: {
-      label: '01 · Sees in 3D',
-      title: 'Every shot, measured in 3D.',
-      lede: 'The LiDAR scanner measures the scene in metres on the phone, and Gemini gets the distance to your subject in every turn.',
-      steps: [
-        { title: 'LiDAR', text: 'A grid of infrared dots lands on every surface.' },
-        { title: 'Distance, live', text: 'The depth stream runs about 15 times a second. The distance at your subject goes to Gemini as subject_m.' },
-        { title: 'Depth Pro 2', text: 'After the shot, Apple’s Depth Pro 2 S gives every pixel a metric depth on the Neural Engine.' },
-      ],
-      caption: 'Sample scene: IMG_1491 · depth shown as points',
-    },
-  },
-  {
-    // The phone viewfinder demo plus Gemini's live agent trace (src/story/trace.js).
-    id: 'coach',
-    kind: 'coach',
-    n: 2,
-    phone: [{ src: SCENES.viewfinder }],
-    media: 'left',
-    label: 'Coaches you live',
-    title: 'Gemini drives the camera.',
-    lede: 'Two loops run at once. Gemini 4 reasons and turns the real dials. Gemini Decision answers every second: move, or that’s it.',
-    loop: 6.2,
-    // Synced to the viewfinder scene: ISO rolls 800 → 200 at 0.9 s, the left edge glows at 1.9 s.
-    trace: [
-      { t: 0.0, dir: 'in', text: 'frame · 512 px + state', meta: 'ISO 800 · 1/125 · EV −0.3 · subject_m 1.2 (LiDAR)' },
-      { t: 0.35, dir: 'think', text: 'gemini-4-hydrogen', meta: 'agent loop · thinking low' },
-      { t: 0.9, dir: 'call', text: 'set_camera({ iso: 200, why: "faces are already bright" })' },
-      { t: 1.35, dir: 'in', text: 'functionResponse', meta: '{ iso: 200 } · clamped to what this iPhone supports' },
-      { t: 1.9, dir: 'call', text: 'decide({ move: "left", p: 0.82 })', meta: 'gemini-decision-1 · the left edge glows' },
-      { t: 3.6, dir: 'call', text: 'decide({ ready: "yes", p: 0.91 })', meta: 'gemini-decision-1 · “That’s it.”' },
-    ],
-    traceLabel: 'Agent trace · live',
-    traceNote: 'Replayed faster than real time. A Gemini 4 turn takes 1.6–5 s; a Decision call 0.4–1 s.',
-  },
-  {
-    // src/showcase/ mountShowcase(el, opts): the same shot from 01, after the shutter.
-    id: 'after',
-    kind: 'showcase',
-    n: 3,
-    fallback: {
-      label: 'After the shot',
-      title: 'Light by distance.',
-      lede: 'Depth turns the edit into lighting: near and far get their own light.',
-    },
-  },
+  { id: 'gemini', kind: 'gemini' },
+  // src/lidar/ mountLidar(el, copy): a real scene as points, settling into the photo.
+  { id: 'lidar', kind: 'lidar', copy: { label: 'LiDAR · on device' } },
+  { id: 'live', kind: 'live' },
+  // src/compare/ mountCompare(el): Heliocam against other camera apps.
+  { id: 'compare', kind: 'compare' },
+  // src/showcase/ mountShowcase(el, opts): the same shot from LiDAR, after the shutter.
+  { id: 'after', kind: 'showcase', label: 'The shot' },
   {
     // src/looks/ mountLooks(el, chapter): Neon writes a Metal shader live; real preset code.
+    // steps[0] is the look that is asked for.
     id: 'looks',
     kind: 'looks',
     n: 4,
     label: 'Looks',
-    title: 'Gemini writes the shader.',
-    lede: 'Say a look. Gemini 4 Neon writes a Metal shader for it, the phone compiles it on the GPU, and the photo changes live.',
-    steps: [
-      { title: 'Say it', text: '“Kodachrome 400 slide film”' },
-      { title: 'Neon writes Metal', text: 'The code streams onto the photo as it’s written.' },
-      { title: 'Compiled on the phone', text: 'If it doesn’t compile, the error goes back to Neon to fix.' },
-      { title: 'Live', text: 'The new look fades in over 0.7 s.' },
-    ],
-    tech: 'gemini-4-neon · streamGenerateContent · thinkingLevel low · MTLDevice.makeLibrary(source:)',
-    note: 'Replayed faster than real time. Writing a look takes about 18 s.',
-  },
-  {
-    id: 'voice',
-    kind: 'voice',
-    n: 5,
-    media: 'left',
-    label: 'Just talk to it',
-    title: 'Say what you want.',
-    lede: 'Your words are transcribed on the phone, and a clip of your voice goes to Gemini too. It answers in a calm voice.',
-    loop: 7.5,
-    listen: [0.3, 2.3],
-    steps: [
-      { text: '“Get the wall behind the can”', start: 0.3, end: 2.6 },
-      { text: 'Gemini plans the move', start: 2.6, end: 4.8 },
-      { text: '“Lower the phone. Hold.”', start: 4.8, end: 7.5 },
-    ],
+    steps: [{ text: '“Kodachrome 400 slide film”' }],
+    tech: MODELS.neon.id,
   },
   { id: 'in-app', kind: 'app' },
   { id: 'footer', kind: 'footer' },

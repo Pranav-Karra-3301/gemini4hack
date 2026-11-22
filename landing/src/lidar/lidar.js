@@ -1,5 +1,7 @@
 // 01 · Sees in 3D first. A real scene (IMG_1491) as a LiDAR point cloud that settles into the photo.
-// One sticky 100vh stage inside a ~260vh section; scroll progress p drives three acts:
+// Text-free (DESIGN_V5.md): the cloud is full-bleed and centred. The words are the section title
+// (TITLES.lidar) top-left with a small "LiDAR · on device" chip under it, and the measured distances.
+// One sticky 100svh stage inside a ~260svh section; scroll progress p drives three acts:
 //   0.00-0.35  the scan: a dark stage, the emitter glow at the phone's lens, a dot lattice sweeps the
 //              scene and points land where it hits, coloured by depth in Gemini blue; slow orbit.
 //   0.35-0.65  distances: measured labels (read from the depth map) on the people, railing, rocks, sea.
@@ -7,8 +9,10 @@
 //              and the cloud flattens onto the photo plane, which then shows the photograph itself.
 //
 //   import { mountLidar } from './lidar/lidar.js';
-//   const { destroy } = mountLidar(sectionEl, { label, title, lede, steps: [{ title, text }] });
+//   const { destroy } = mountLidar(sectionEl, copy); // copy.label: the chip under the title
 import * as THREE from 'three';
+import { TITLES } from '../config.js';
+import { sectionTitle } from '../title/title.js';
 import './lidar.css';
 
 const BASE = (import.meta.env && import.meta.env.BASE_URL) || '/';
@@ -60,7 +64,10 @@ const KEYS = [
   { p: 0.65, yaw: -24, pitch: 13, dist: 1.6 },
 ];
 const STEP_AT = [0, 0.35, 0.65];
-const STILL = [0.31, 0.52, 1]; // reduced motion: one static frame per step
+const STILL = [0.31, 0.52, 1]; // reduced motion: one static frame per act
+const LABEL = 'LiDAR · on device';
+// On a phone the scene sits this much below the stage's centre, so the title above it stays clear.
+const MOBILE_DROP = 0.06; // of the stage height
 
 // ---- helpers ------------------------------------------------------------------------------------
 const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
@@ -254,7 +261,7 @@ void main() {
 
   float tw = 1.0 + uMotion * 0.14 * sin(uTime * 2.1 + aData.w * 61.0);
   vec2 e = min(aData.xy, 1.0 - aData.xy);
-  float fw = mix(0.025, uFeather, uColor);
+  float fw = mix(0.06, uFeather, uColor); // soft scan edges: the cloud melts into the ink
   float edge = smoothstep(0.0, fw, e.x) * smoothstep(0.0, fw * 1.3333, e.y);
   float horizon = mix(smoothstep(0.0, 0.16, d), 1.0, uColor);
   vA = (uAlpha * on * tw + band * 0.45 * (1.0 - uColor)) * edge * horizon * uFade;
@@ -367,8 +374,6 @@ void main() {
 
 // ---- the module ---------------------------------------------------------------------------------
 export function mountLidar(el, copy = {}) {
-  const steps = Array.isArray(copy.steps) ? copy.steps : [];
-
   // DOM
   el.classList.add('ld');
   const sticky = h('div', 'ld__sticky');
@@ -379,28 +384,15 @@ export function mountLidar(el, copy = {}) {
     'A LiDAR point cloud of three friends on a coastal boardwalk: the people stand about 2.4 metres away, the railing behind them, the sea far behind. It settles into the photograph.',
   );
   const vignette = h('div', 'ld__vignette');
-  const scrim = h('div', 'ld__scrim');
+  const fade = h('div', 'ld__fade'); // the stage's top and bottom melt into the page ink
   const tagsEl = h('div', 'ld__tags');
   tagsEl.setAttribute('aria-hidden', 'true');
-  const wrap = h('div', 'ld__wrap');
-  const grid = h('div', 'ld__grid');
-  const copyEl = h('div', 'ld__copy');
-  if (copy.label) copyEl.append(h('p', 'ld__eyebrow', copy.label));
-  if (copy.title) copyEl.append(h('h2', 'ld__h2', copy.title));
-  if (copy.lede) copyEl.append(h('p', 'ld__lede', copy.lede));
-  const list = h('ol', 'ld__steps');
-  const stepEls = steps.map((s, i) => {
-    const li = h('li', 'ld-step');
-    li.append(h('span', 'ld-step__num', String(i + 1).padStart(2, '0')));
-    if (s.title) li.append(h('span', 'ld-step__title', s.title));
-    if (s.text) li.append(h('span', 'ld-step__text', s.text));
-    list.append(li);
-    return li;
-  });
-  if (stepEls.length) copyEl.append(list);
-  grid.append(copyEl);
-  wrap.append(grid);
-  sticky.append(canvas, vignette, scrim, tagsEl, wrap);
+  // the section title, and under it what does the work: LiDAR, on the phone
+  const head = h('div', 'ld__head');
+  const label = h('p', 'ld__label');
+  label.append(h('i', 'ld__label-dot'), h('span', '', copy.label || LABEL));
+  head.append(sectionTitle(TITLES.lidar, { className: 'ld__title' }), label);
+  sticky.append(canvas, vignette, fade, tagsEl, head);
   el.append(sticky);
 
   const motionMQ = matchMedia('(prefers-reduced-motion: reduce)');
@@ -412,24 +404,11 @@ export function mountLidar(el, copy = {}) {
   let clock = 0;
   let cur = -1;
   let target = 0;
-  let step = -1;
   let dirty = true;
   let W = 1;
   let H = 1;
   let dpr = 1;
   let mobile = false;
-
-  function setStep(s) {
-    if (s === step) return;
-    step = s;
-    for (let i = 0; i < stepEls.length; i++) {
-      const on = i === s;
-      stepEls[i].classList.toggle('is-active', on);
-      if (on) stepEls[i].setAttribute('aria-current', 'step');
-      else stepEls[i].removeAttribute('aria-current');
-    }
-  }
-  setStep(0);
 
   function readProgress() {
     const r = el.getBoundingClientRect();
@@ -565,9 +544,9 @@ export function mountLidar(el, copy = {}) {
   scene.add(beam, frustum, motes, glow);
 
   // ---- layout ---------------------------------------------------------------------------------
-  // The scene is framed by a "photo rect" on screen (right of the copy on desktop, under it on
-  // mobile). The camera keeps the photo's own intrinsics with the principal point at that rect's
-  // centre, so the front view at the end shows the photo exactly filling it.
+  // The scene is framed by a "photo rect" centred on the stage: nearly full-bleed on desktop, wider
+  // than the screen on a phone. The camera keeps the photo's own intrinsics with the principal point
+  // at that rect's centre, so the front view at the end shows the photo exactly filling it.
   let focalCss = 1;
   function layout() {
     const r = sticky.getBoundingClientRect();
@@ -575,28 +554,10 @@ export function mountLidar(el, copy = {}) {
     H = Math.max(1, Math.round(r.height));
     mobile = W < 768;
     dpr = Math.min(window.devicePixelRatio || 1, 1.75);
-    const c = copyEl.getBoundingClientRect();
-    let cx;
-    let cy;
-    let rh;
-    if (!mobile) {
-      const left = c.right - r.left - 8;
-      const right = W - Math.max(16, W * 0.025);
-      let rw = right - left;
-      rh = rw * 0.75;
-      if (rh > H * 0.86) {
-        rh = H * 0.86;
-        rw = rh / 0.75;
-      }
-      cx = (left + right) / 2;
-      cy = H / 2;
-    } else {
-      const top = c.bottom - r.top + 12;
-      const bottom = H - 12;
-      rh = Math.min(W * 1.2 * 0.75, Math.max(160, bottom - top));
-      cx = W / 2;
-      cy = Math.max(top + rh / 2, (top + bottom) / 2);
-    }
+    const cx = W / 2;
+    const cy = H * (mobile ? 0.5 + MOBILE_DROP : 0.5);
+    // desktop: as tall as the stage allows (the edges feather out); phone: 1.4x the width, cropped
+    const rh = mobile ? Math.min(H * 0.62, W * 1.4 * 0.75) : Math.min(H, W * 0.94 * 0.75);
     focalCss = rh / (2 * TAN_Y);
     const n = camera.near;
     camera.projectionMatrix.makePerspective(
@@ -681,7 +642,7 @@ export function mountLidar(el, copy = {}) {
     // reaches the photo's brightness by the time the photo itself fades in
     U.uGain.value = lerp(1, 2.1, color);
     U.uFade.value = 1 - ss(0.96, 0.995, p);
-    U.uFeather.value = mobile ? 0.05 : 0.07;
+    U.uFeather.value = mobile ? 0.06 : 0.12;
     latticeU.uOn.value = ss(0.0, 0.04, p) * (1 - ss(0.3, 0.42, p));
     photoU.uOpacity.value = ss(0.88, 0.975, p);
 
@@ -736,7 +697,6 @@ export function mountLidar(el, copy = {}) {
       p = STILL[stepOf(target)];
       const changed = p !== cur;
       cur = p;
-      setStep(stepOf(target));
       if (changed || dirty) {
         apply(p, 0);
         render();
@@ -749,7 +709,6 @@ export function mountLidar(el, copy = {}) {
     cur += (target - cur) * (1 - Math.pow(1 - 0.12, dt * 60));
     if (Math.abs(target - cur) < 1e-4) cur = target;
     p = cur;
-    setStep(stepOf(p));
     apply(p, clock);
     render();
     dirty = false;
@@ -779,7 +738,6 @@ export function mountLidar(el, copy = {}) {
     invalidate();
   });
   ro.observe(sticky);
-  ro.observe(copyEl);
   document.fonts?.ready.then(() => {
     if (destroyed) return;
     layout();

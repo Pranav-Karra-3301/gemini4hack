@@ -1,23 +1,28 @@
 // Looks: Gemini 4 Neon writes a Metal shader for a spoken look, the phone compiles it, and the
 // photo changes live. A scripted ~14 s replay of the app's Looks tab (PR #49, ShaderLab.swift):
-// the request, the body streaming into a tinted pane with a cursor and a blue border, one failed
-// compile (amber pulse, the error, the line retyped), a blue flash, then the look crossfades in
-// over 0.7 s. The bodies are the app's real preset code (presets.js), and the photo is rendered
-// by their GLSL ports, so what you see is that shader's look.
+// the request, the body streaming into a tinted pane with a cursor and Neon's violet light, one
+// failed compile (amber pulse, the error, the line retyped), a violet flash, then the look
+// crossfades in over 0.7 s. The bodies are the app's real preset code (presets.js), and the photo
+// is rendered by their GLSL ports, so what you see is that shader's look.
+// Text-free (DESIGN_V5.md): no copy column. The section title (TITLES.looks) and Neon's chip (id and
+// role) above a large, centred frame that feathers into the ink; the request chip is the only other
+// words.
 //
 //   const { destroy } = mountLooks(sectionEl, CHAPTERS.find((c) => c.id === 'looks'));
 //
-// All copy comes from `chapter`. Pauses off screen; under prefers-reduced-motion it shows the
-// finished state (code plus the applied look) without typing.
+// From `chapter` it uses only steps[0].text (the first request) and the lede (screen readers).
+// Pauses off screen; under prefers-reduced-motion it shows the finished state (code plus the
+// applied look) without typing.
 import './looks.css';
+import { MODELS, TITLES } from '../config.js';
+import { sectionTitle } from '../title/title.js';
 import { PRESETS, BODY_LINE, IDENTITY_GLSL, VERTEX, fragment } from './presets.js';
 
 const PHOTO = { src: '/showcase/img-1491.webp', w: 2048, h: 1536 };
-const MODEL = 'gemini-4-neon';
 const DPR_CAP = 1.75;
 const FADE = 0.7; // LabRenderer.fade
 
-// Loop timeline, in seconds. The steps follow it: say it, Neon writes, compile, live.
+// Loop timeline, in seconds: say it, Neon writes, compile, live.
 const T = {
   chip: 0.3,
   open: 1.2,
@@ -26,13 +31,11 @@ const T = {
   error: 5.6,
   erase: 5.95,
   retype: 6.25,
-  fixed: 6.85, // compiled: blue flash, crossfade starts (ShaderLab swaps on `serial`)
-  caption: 7.15,
+  fixed: 6.85, // compiled: violet flash, crossfade starts (ShaderLab swaps on `serial`)
   collapse: 7.55, // the app folds the pane 0.7 s after ready
   out: 13.5,
   end: 14,
 };
-const STEP_AT = [0, T.open, T.typeEnd, T.fixed];
 const STILL_T = 9; // the finished state shown under reduced motion
 
 /* ---------- code tint (ShaderLab.swift CodeTint) ---------- */
@@ -234,48 +237,23 @@ function createRenderer(canvas, onFail) {
 
 export function mountLooks(el, chapter) {
   if (!chapter) throw new Error('mountLooks: missing chapter');
-  const pad = (n) => String(n).padStart(2, '0');
   const steps = chapter.steps || [];
 
-  el.classList.add('section', 'looks', `media-${chapter.media || 'right'}`);
+  el.classList.add('looks');
   el.innerHTML = '';
-  const container = h('div', 'container grid');
-  el.append(h('div', 'lk-light'), container);
 
-  // text column
-  const copy = h('div', 'col-text copy lk-copy');
-  const reveal = [];
-  const rv = (n) => {
-    n.classList.add('rv');
-    n.style.setProperty('--i', reveal.length);
-    reveal.push(n);
-    return n;
-  };
-  copy.append(rv(h('p', 'eyebrow', `${pad(chapter.n)} · ${chapter.label}`)), rv(h('h2', 'h2', chapter.title)));
-  if (chapter.lede) copy.append(rv(h('p', 'lede', chapter.lede)));
-  const list = h('ol', 'steps lk-steps');
-  const stepEls = steps.map((s, i) => {
-    const li = rv(h('li', 'step'));
-    const text = h('span', 'step__text');
-    if (s.title) text.append(h('span', 'lk-step__title', s.title));
-    if (s.text) text.append(h('span', s.title ? 'lk-step__sub' : '', s.text));
-    li.append(h('span', 'step__num', pad(i + 1)), text);
-    list.append(li);
-    return li;
-  });
-  if (steps.length) copy.append(list);
-  if (chapter.tech) {
-    const tech = rv(h('ul', 'lk-tech'));
-    tech.setAttribute('aria-label', 'Under the hood');
-    chapter.tech.split(' · ').forEach((t) => tech.append(h('li', '', t)));
-    copy.append(tech);
-  }
-  if (chapter.note) copy.append(rv(h('p', 'small lk-note', chapter.note)));
-
-  // media: the photo in a lit frame, the code pane, the request and the reply
-  const media = h('div', 'col-media lk-media rv-media');
+  // the stage: the title and Neon's chip, then the photo in a frame that feathers into the ink
+  const stage = h('div', 'lk-stage');
+  const head = h('div', 'lk-head');
+  const model = h('p', 'lk-model');
+  model.setAttribute('aria-hidden', 'true');
+  model.append(h('i'), h('span', 'lk-model__id', MODELS.neon.id), h('span', 'lk-model__role', MODELS.neon.role));
+  head.append(sectionTitle(TITLES.looks), model);
+  const media = h('div', 'lk-media');
+  const aura = h('div', 'lk-aura'); // Neon's light around the frame while it writes
   const frame = h('figure', 'lk-frame');
-  frame.setAttribute('aria-label', `${chapter.label}: ${steps.map((s) => s.text).join(' ')}`);
+  frame.setAttribute('role', 'img');
+  frame.setAttribute('aria-label', chapter.lede || chapter.title || 'Gemini 4 Neon writes a Metal shader and the photo changes live.');
   const img = h('img', 'lk-photo');
   img.alt = '';
   img.decoding = 'async';
@@ -287,7 +265,7 @@ export function mountLooks(el, chapter) {
   const pane = h('div', 'lk-pane');
   const paneHead = h('div', 'lk-pane__head');
   const status = h('span', 'lk-pane__status');
-  paneHead.append(h('span', 'lk-pane__model', MODEL), status);
+  paneHead.append(status);
   const body = h('div', 'lk-pane__body');
   const pre = h('pre', 'lk-code');
   body.append(pre);
@@ -298,11 +276,11 @@ export function mountLooks(el, chapter) {
   err.append(errAt, errMsg);
   pane.append(paneHead, body, err);
   const chip = h('div', 'lk-chip');
-  const caption = h('div', 'lk-caption');
-  frame.append(img, canvas, shade, pane, chip, caption);
-  [shade, pane, chip, caption].forEach((n) => n.setAttribute('aria-hidden', 'true'));
-  media.append(frame);
-  container.append(copy, media);
+  frame.append(img, canvas, shade, pane, chip);
+  [shade, pane, chip].forEach((n) => n.setAttribute('aria-hidden', 'true'));
+  media.append(aura, frame);
+  stage.append(head, media);
+  el.append(stage);
 
   // per-preset code, built once; the first request is the chapter's own words
   const ask = steps[0]?.text?.replace(/^[“"]|[”"]$/g, '');
@@ -346,7 +324,7 @@ export function mountLooks(el, chapter) {
   let last = 0;
   let sized = false;
   // what's on screen, so each frame only touches what changed
-  const cur = { preset: -1, step: -1, phase: '', status: '', cursorAt: null, scroll: 0 };
+  const cur = { preset: -1, phase: '', status: '', cursorAt: null, scroll: 0 };
   const want = { from: 'identity', to: 'identity', k: 0 };
   const drawn = { from: '', to: '', k: -1 };
 
@@ -356,7 +334,6 @@ export function mountLooks(el, chapter) {
     errAt.textContent = c.errAt;
     errMsg.textContent = c.errMsg;
     chip.textContent = requests[i];
-    caption.textContent = `${PRESETS[i].title}, live.`;
     cur.preset = i;
     cur.cursorAt = null;
     cur.scroll = 0;
@@ -407,24 +384,16 @@ export function mountLooks(el, chapter) {
     const pi = still ? 0 : loop % PRESETS.length;
     if (pi !== cur.preset) showPreset(pi);
 
-    // the steps follow the replay
-    let step = 0;
-    for (let i = 0; i < STEP_AT.length; i++) if (t >= STEP_AT[i]) step = i;
-    if (step !== cur.step) {
-      stepEls.forEach((s, i) => s.classList.toggle('is-active', i === step));
-      cur.step = step;
-    }
-
-    // pane state, chip, caption
+    // pane state and the request chip; the stage mirrors the phase for Neon's light around it
     const phase = phaseAt(t);
     if (phase !== cur.phase) {
       frame.dataset.phase = phase;
+      stage.dataset.phase = phase;
       cur.phase = phase;
     }
     if (STATUS[phase] !== cur.status) status.textContent = cur.status = STATUS[phase];
     frame.classList.toggle('is-open', still || (t >= T.open && t < T.out));
     frame.classList.toggle('has-chip', still || (t >= T.chip && t < T.out));
-    frame.classList.toggle('has-caption', still || (t >= T.caption && t < T.out));
     frame.classList.toggle('has-error', !still && t >= T.error && t < T.fixed);
 
     // code and cursor (shown while Neon is busy, as in the app)
@@ -510,7 +479,7 @@ export function mountLooks(el, chapter) {
     },
     { threshold: [0, 0.2] },
   );
-  // text and media reveal, as the page's own reveal does
+  // the stage rises in as it enters, as the page's own reveal does
   const revealIO = new IntersectionObserver(
     (entries) =>
       entries.forEach((e) => {
@@ -519,8 +488,7 @@ export function mountLooks(el, chapter) {
       }),
     { threshold: 0.12, rootMargin: '0px 0px -6% 0px' },
   );
-  revealIO.observe(copy);
-  revealIO.observe(media);
+  revealIO.observe(stage);
   playIO.observe(frame);
 
   const ro = new ResizeObserver(() => {
@@ -533,12 +501,14 @@ export function mountLooks(el, chapter) {
   const onMotion = () => {
     still = reduced.matches;
     frame.classList.toggle('is-still', still);
+    stage.classList.toggle('is-still', still);
     if (still) stop();
     else if (onScreen) start();
     render(0);
   };
   reduced.addEventListener('change', onMotion);
   frame.classList.toggle('is-still', still);
+  stage.classList.toggle('is-still', still);
   render(0);
 
   return {
@@ -552,7 +522,7 @@ export function mountLooks(el, chapter) {
       gl?.destroy();
       gl = null;
       el.innerHTML = '';
-      el.classList.remove('section', 'looks', `media-${chapter.media || 'right'}`);
+      el.classList.remove('looks');
     },
   };
 }

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Hero demo: the iris and the shutter</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght@6..144,400..700&family=Google+Sans+Code:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      .pad {
+        height: 120vh;
+        display: grid;
+        place-items: center;
+        color: rgba(238, 243, 255, 0.45);
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <section class="hero" id="top"></section>
+    <div class="pad">The next chapter</div>
+    <script type="module">
+      import '../style.css';
+      import { mountHero } from './hero.js';
+      window.__hero = mountHero(document.getElementById('top'));
+    </script>
+  </body>
+</html>

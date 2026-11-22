@@ -1,0 +1,14 @@
+/* The one title a section gets (src/title/title.js). Big, solid, quiet around it. */
+.sec-title {
+  margin: 0;
+  font-family: var(--font, 'Google Sans Flex', sans-serif);
+  font-size: clamp(44px, 6.4vw, 104px);
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 0.95;
+  color: #eef3ff;
+  text-wrap: balance;
+}
+@media (max-width: 767px) {
+  .sec-title { font-size: clamp(40px, 12vw, 60px); }
+}
